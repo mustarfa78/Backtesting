@@ -244,11 +244,21 @@ def main() -> None:
     if args.resume:
         seen_event_ids, scanned_windows = _load_state(state_path)
 
+    loop_count = 0
+    max_loops = 5
     while True:
+        loop_count += 1
+        if loop_count > max_loops:
+            summary_lines.append(f"safety stop: max_loops reached ({max_loops})")
+            break
+        seen_before = len(seen_event_ids)
         for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]:
             scanned_windows.add((name, days_window))
 
         announcements, adapter_stats = fetch_all_announcements(session, days_window, seen_event_ids)
+        if len(seen_event_ids) == seen_before:
+            summary_lines.append("safety stop: no new announcements after fetch")
+            break
 
         if args.debug_adapters:
             for name, samples in adapter_stats["samples"].items():
