@@ -17,7 +17,7 @@ from adapters import (
 )
 from adapters.common import Announcement, is_futures_announcement
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
-from http_client import build_session
+from screening_utils import get_session, mexc_symbols_for
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
@@ -36,20 +36,20 @@ def parse_args() -> argparse.Namespace:
 
 def fetch_all_announcements(session, days: int) -> List[Announcement]:
     adapters = [
-        fetch_binance,
-        fetch_bybit,
-        fetch_kucoin,
-        fetch_xt,
-        fetch_gate,
-        fetch_kraken,
-        fetch_bitget,
+        ("Binance", fetch_binance),
+        ("Bybit", fetch_bybit),
+        ("KuCoin", fetch_kucoin),
+        ("XT", fetch_xt),
+        ("Gate", fetch_gate),
+        ("Kraken", fetch_kraken),
+        ("Bitget", fetch_bitget),
     ]
     announcements: List[Announcement] = []
-    for adapter in adapters:
+    for name, adapter in adapters:
         try:
             announcements.extend(adapter(session, days=days))
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("Adapter %s failed: %s", adapter.__name__, exc)
+            LOGGER.warning("Adapter %s failed: %s", name, exc)
     announcements.sort(key=lambda a: a.published_at_utc, reverse=True)
     return announcements
 
@@ -73,10 +73,9 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    session = build_session()
+    session = get_session()
     announcements = fetch_all_announcements(session, args.days)
     mexc = MexcFuturesClient(session)
-    contracts = mexc.list_contracts()
 
     rows: List[Dict[str, str]] = []
     seen = set()
@@ -92,16 +91,28 @@ def main() -> None:
                 continue
             seen.add(key)
 
-            symbol = mexc.map_ticker_to_symbol(ticker, contracts)
-            if not symbol:
+            symbols = mexc_symbols_for(ticker, session)
+            if not symbols:
                 continue
             at_time = announcement.published_at_utc.replace(second=0, microsecond=0)
-            try:
-                has_candle, pre_candles = mexc.ensure_trading(symbol, at_time)
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.warning("MEXC check failed for %s: %s", symbol, exc)
-                continue
-            if not has_candle:
+            symbol = None
+            for candidate_symbol in sorted(symbols):
+                try:
+                    has_candle, _pre_candles = mexc.ensure_trading(candidate_symbol, at_time)
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.warning("MEXC check failed for %s: %s", candidate_symbol, exc)
+                    continue
+                if not has_candle:
+                    LOGGER.info(
+                        "Skipping %s at %s: no MEXC candle for %s",
+                        ticker,
+                        at_time.isoformat(),
+                        candidate_symbol,
+                    )
+                    continue
+                symbol = candidate_symbol
+                break
+            if not symbol:
                 continue
 
             window_start = at_time - timedelta(minutes=10)

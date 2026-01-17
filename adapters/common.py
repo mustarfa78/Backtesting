@@ -6,6 +6,8 @@ from typing import Iterable, List, Optional
 
 from dateutil import parser
 
+from screening_utils import extract_tickers
+
 
 @dataclass(frozen=True)
 class Announcement:
@@ -29,25 +31,6 @@ FUTURES_KEYWORDS = (
     "innovation",
 )
 
-STOP_TOKENS = {
-    "USDT",
-    "USD",
-    "USDC",
-    "PERP",
-    "PERPETUAL",
-    "FUTURES",
-    "CONTRACT",
-    "SWAP",
-    "USDⓈ",
-    "USD-M",
-    "TRADING",
-    "LISTING",
-    "LIST",
-    "MARGIN",
-    "SPOT",
-}
-
-
 def guess_listing_type(title: str) -> str:
     lowered = title.lower()
     if "premarket" in lowered:
@@ -67,21 +50,6 @@ def is_futures_announcement(title: str, extra_keywords: Iterable[str] | None = N
         if any(keyword in lowered for keyword in extra_keywords):
             return True
     return any(keyword in lowered for keyword in FUTURES_KEYWORDS)
-
-
-def extract_tickers(title: str) -> List[str]:
-    import re
-
-    candidates = re.findall(r"\b[A-Z0-9]{2,}\b", title.upper())
-    tickers = []
-    for token in candidates:
-        if token in STOP_TOKENS:
-            continue
-        if token.isdigit():
-            continue
-        if token not in tickers:
-            tickers.append(token)
-    return tickers
 
 
 def ensure_utc(dt: datetime) -> datetime:

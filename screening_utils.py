@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+import re
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Dict, List, Set, Tuple
+
+import requests
+
+FAPI_EXCHANGEINFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+BINANCE_FUTURES_CACHE_TTL_SEC = 600
+
+MEXC_CONTRACT_DETAIL_URL = "https://contract.mexc.com/api/v1/contract/detail"
+MEXC_FUTURES_CACHE_TTL_SEC = 600
+
+PAIR_QUOTES = ("USDT", "USDC", "USD", "BTC", "ETH", "BNB", "EUR", "GBP", "TRY")
+
+IGNORE_WORDS = {
+    "THE",
+    "ON",
+    "TOKEN",
+    "LISTING",
+    "LISTINGS",
+    "FUTURES",
+    "PERPETUAL",
+    "PERP",
+    "CONTRACT",
+    "USD",
+    "USDT",
+    "USDC",
+    "BUSD",
+    "FDUSD",
+    "TUSD",
+    "USDK",
+    "USDⓈ",
+    "USD-M",
+    "MARGIN",
+    "SPOT",
+    "TRADING",
+    "TRADES",
+    "WILL",
+    "LAUNCH",
+    "LAUNCHES",
+    "OPEN",
+    "OPENING",
+    "NEW",
+    "ADD",
+    "ADDS",
+    "LIST",
+    "PAIR",
+    "PAIRS",
+    "MARKET",
+    "ANNOUNCEMENT",
+    "SUPPORT",
+    "SUPPORTS",
+    "WITH",
+    "AND",
+    "FOR",
+    "FROM",
+    "THIS",
+    "THAT",
+    "YOUR",
+    "OUR",
+    "WEEK",
+    "DAY",
+    "HOUR",
+    "PER",
+    "MEXC",
+    "BINANCE",
+    "BYBIT",
+    "KUCOIN",
+    "GATE",
+    "KRAKEN",
+    "BITGET",
+    "XT",
+    "FUTURE",
+    "SWAP",
+    "INNOVATION",
+    "ZONE",
+    "PREMARKET",
+    "PRE",
+    "MARKET",
+    "UTC",
+    "UP",
+    "DOWN",
+    "IN",
+    "AT",
+    "TO",
+    "OF",
+    "A",
+    "AN",
+    "IS",
+    "ARE",
+    "BE",
+    "ITS",
+    "AS",
+    "ONCHAIN",
+}
+
+SEEN_LOCK = threading.Lock()
+SEEN: Dict[str, Set[str]] = {
+    "BINANCE": set(),
+    "BYBIT": set(),
+    "XT": set(),
+    "KUCOIN": set(),
+    "BITGET": set(),
+    "KRAKEN": set(),
+    "WEEX": set(),
+    "BINGX": set(),
+    "GATE": set(),
+    "MEXC": set(),
+}
+
+_bin_fut_lock = threading.Lock()
+_bin_fut_loaded_at = 0
+_bin_base_to_quotes: Dict[str, Set[str]] = {}
+
+_mexc_fut_lock = threading.Lock()
+_mexc_fut_loaded_at = 0
+_mexc_base_to_symbols: Dict[str, Set[str]] = {}
+
+
+def get_session() -> requests.Session:
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=3)
+    session.mount("https://", adapter)
+    return session
+
+
+def get_plain_session() -> requests.Session:
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=2)
+    session.mount("https://", adapter)
+    return session
+
+
+def iso_to_ms(iso_str: str) -> int:
+    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    return int(dt.timestamp() * 1000)
+
+
+def normalize_epoch_to_ms(x) -> int:
+    try:
+        if x is None:
+            return 0
+        if isinstance(x, str):
+            x = x.strip()
+            if x.isdigit():
+                x = int(x)
+            else:
+                return iso_to_ms(x)
+        if isinstance(x, (int, float)):
+            x = int(x)
+            if x < 10_000_000_000:
+                return x * 1000
+            return x
+    except Exception:
+        return 0
+    return 0
+
+
+def mark_seen(source: str, uniq: str) -> bool:
+    with SEEN_LOCK:
+        if uniq in SEEN[source]:
+            return False
+        SEEN[source].add(uniq)
+        return True
+
+
+def extract_tickers(text: str) -> List[str]:
+    safe_text = re.sub(r"[^A-Za-z/\-\s\(\)]", "", text)
+
+    bracket_matches = re.findall(r"\(([A-Z]{2,15})\)", safe_text.upper())
+    loose_matches = re.findall(r"\b[A-Z]{2,12}\b", safe_text.upper())
+
+    pair_matches = re.findall(r"\b([A-Z]{2,12})\s*/\s*([A-Z]{2,6})\b", safe_text.upper())
+    dash_matches = re.findall(r"\b([A-Z]{2,12})-([A-Z]{2,6})\b", safe_text.upper())
+    concat_matches = re.findall(r"\b([A-Z]{2,12})(USDT|USDC|USD|BTC|ETH|BNB)\b", safe_text.upper())
+
+    all_potential = bracket_matches + loose_matches
+
+    expanded: Set[str] = set()
+    for raw in all_potential:
+        t = raw.strip().upper()
+        if not t:
+            continue
+        for q in PAIR_QUOTES:
+            if t.endswith(q) and len(t) > len(q) + 1:
+                expanded.add(t[: -len(q)])
+        expanded.add(t)
+
+    for base, quote in pair_matches + dash_matches:
+        if quote in PAIR_QUOTES:
+            expanded.add(base)
+    for base, _quote in concat_matches:
+        expanded.add(base)
+
+    out = []
+    for t in expanded:
+        if t in IGNORE_WORDS:
+            continue
+        out.append(t)
+
+    return sorted(list(set(out)))
+
+
+def _refresh_binance_futures_cache(session):
+    global _bin_fut_loaded_at, _bin_base_to_quotes
+    resp = session.get(FAPI_EXCHANGEINFO_URL, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+
+    base_to_quotes: Dict[str, Set[str]] = {}
+    for s in data.get("symbols", []):
+        if s.get("status") != "TRADING":
+            continue
+        base = s.get("baseAsset")
+        quote = s.get("quoteAsset")
+        if base and quote:
+            base_to_quotes.setdefault(base, set()).add(quote)
+
+    _bin_base_to_quotes = base_to_quotes
+    _bin_fut_loaded_at = int(time.time())
+
+
+def binance_usdm_quotes_for(ticker: str, session) -> Set[str]:
+    now = int(time.time())
+    with _bin_fut_lock:
+        if (now - _bin_fut_loaded_at) > BINANCE_FUTURES_CACHE_TTL_SEC or not _bin_base_to_quotes:
+            _refresh_binance_futures_cache(session)
+        return set(_bin_base_to_quotes.get(ticker, set()))
+
+
+def _refresh_mexc_futures_cache(session):
+    global _mexc_fut_loaded_at, _mexc_base_to_symbols
+    resp = session.get(MEXC_CONTRACT_DETAIL_URL, timeout=20)
+    resp.raise_for_status()
+    data = resp.json()
+
+    base_to_syms: Dict[str, Set[str]] = {}
+    items = data.get("data") or []
+    if isinstance(items, dict):
+        items = items.get("list") or items.get("items") or []
+    if not isinstance(items, list):
+        items = []
+
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        base = (it.get("baseCoin") or it.get("base") or "").upper()
+        sym = str(it.get("symbol") or it.get("contractCode") or "").upper()
+
+        status = it.get("status")
+        if isinstance(status, str) and status.lower() in ("offline", "disabled", "suspend"):
+            continue
+
+        if base and sym:
+            base_to_syms.setdefault(base, set()).add(sym)
+
+    _mexc_base_to_symbols = base_to_syms
+    _mexc_fut_loaded_at = int(time.time())
+
+
+def mexc_symbols_for(ticker: str, session) -> Set[str]:
+    now = int(time.time())
+    with _mexc_fut_lock:
+        if (now - _mexc_fut_loaded_at) > MEXC_FUTURES_CACHE_TTL_SEC or not _mexc_base_to_symbols:
+            _refresh_mexc_futures_cache(session)
+        return set(_mexc_base_to_symbols.get(ticker, set()))
+
+
+def passes_futures_gate(ticker: str, session) -> Tuple[bool, bool, bool, Set[str], Set[str]]:
+    bin_quotes = set()
+    mexc_syms = set()
+    try:
+        bin_quotes = binance_usdm_quotes_for(ticker, session)
+    except Exception:
+        bin_quotes = set()
+
+    try:
+        mexc_syms = mexc_symbols_for(ticker, session)
+    except Exception:
+        mexc_syms = set()
+
+    bin_ok = len(bin_quotes) > 0
+    mexc_ok = len(mexc_syms) > 0
+    return (bin_ok or mexc_ok), bin_ok, mexc_ok, bin_quotes, mexc_syms
+
+
+def gate_fetch_listing_ids(html_text: str) -> List[str]:
+    ids = re.findall(r'href="/announcements/article/(\d+)"', html_text)
+    out, seen = [], set()
+    for item in ids:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def mexc_extract_announcement_paths(html_text: str) -> List[str]:
+    paths = re.findall(r'href="(/announcements/[^"]+)"', html_text)
+    paths += re.findall(r'href="(/support/articles/\d+[^"]*)"', html_text)
+
+    out, seen = [], set()
+    for path in paths:
+        clean = path.split("?")[0]
+        if clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+    return out
