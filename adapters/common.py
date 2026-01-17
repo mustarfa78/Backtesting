@@ -45,11 +45,19 @@ def guess_listing_type(title: str) -> str:
 
 
 def is_futures_announcement(title: str, extra_keywords: Iterable[str] | None = None) -> bool:
+    return futures_keyword_match(title, extra_keywords) is not None
+
+
+def futures_keyword_match(title: str, extra_keywords: Iterable[str] | None = None) -> Optional[str]:
     lowered = title.lower()
     if extra_keywords:
-        if any(keyword in lowered for keyword in extra_keywords):
-            return True
-    return any(keyword in lowered for keyword in FUTURES_KEYWORDS)
+        for keyword in extra_keywords:
+            if keyword in lowered:
+                return keyword
+    for keyword in FUTURES_KEYWORDS:
+        if keyword in lowered:
+            return keyword
+    return None
 
 
 def ensure_utc(dt: datetime) -> datetime:

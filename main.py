@@ -17,7 +17,7 @@ from adapters import (
     fetch_kucoin,
     fetch_xt,
 )
-from adapters.common import Announcement, is_futures_announcement
+from adapters.common import Announcement, futures_keyword_match, is_futures_announcement
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
 from screening_utils import get_session
 from marketcap import resolve_market_cap
@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target", type=int, default=DEFAULT_TARGET, help="Number of rows to collect")
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="Lookback window in days")
     parser.add_argument("--out", type=str, default="events.csv", help="Output CSV path")
+    parser.add_argument("--no-futures-filter", action="store_true", help="Disable futures-only filtering")
+    parser.add_argument("--debug-adapters", action="store_true", help="Print sample adapter items")
     parser.add_argument("--debug-ticker", type=str, default="", help="Ticker to debug mapping/klines")
     parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
     parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
@@ -40,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_all_announcements(session, days: int) -> List[Announcement]:
+def fetch_all_announcements(session, days: int) -> tuple[List[Announcement], dict]:
     adapters = [
         ("Binance", fetch_binance),
         ("Bybit", fetch_bybit),
@@ -51,13 +53,20 @@ def fetch_all_announcements(session, days: int) -> List[Announcement]:
         ("Bitget", fetch_bitget),
     ]
     announcements: List[Announcement] = []
+    stats = {"counts": {}, "errors": {}, "samples": {}}
     for name, adapter in adapters:
         try:
-            announcements.extend(adapter(session, days=days))
+            items = adapter(session, days=days)
+            stats["counts"][name] = len(items)
+            stats["samples"][name] = items[:3]
+            announcements.extend(items)
+            LOGGER.info("adapter=%s announcements=%s", name, len(items))
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("Adapter %s failed: %s", name, exc)
+            stats["errors"][name] = str(exc)
+            LOGGER.warning("Adapter %s failed: %s", name, exc, exc_info=True)
     announcements.sort(key=lambda a: a.published_at_utc, reverse=True)
-    return announcements
+    LOGGER.info("total announcements fetched=%s", len(announcements))
+    return announcements, stats
 
 
 def _compute_ma5_at_minus_1m(candles, at_time: datetime) -> Optional[float]:
@@ -80,10 +89,22 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     session = get_session()
-    announcements = fetch_all_announcements(session, args.days)
+    announcements, adapter_stats = fetch_all_announcements(session, args.days)
     mexc = MexcFuturesClient(session)
     contracts = mexc.list_contracts()
 
+    if args.debug_adapters:
+        for name, samples in adapter_stats["samples"].items():
+            LOGGER.info("adapter=%s sample_count=%s", name, len(samples))
+            for item in samples:
+                LOGGER.info(
+                    "adapter=%s sample title=%s published=%s url=%s",
+                    name,
+                    item.title,
+                    item.published_at_utc,
+                    item.url,
+                )
+        return
     if args.debug_ticker and args.debug_at:
         debug_time = parser.isoparse(args.debug_at).astimezone(timezone.utc)
         debug_ticker = args.debug_ticker.upper()
@@ -119,12 +140,46 @@ def main() -> None:
         mexc.probe_first_contracts(contracts)
         return
 
+    if not announcements:
+        for name, count in adapter_stats["counts"].items():
+            LOGGER.info("adapter=%s announcements=%s", name, count)
+        for name, error in adapter_stats["errors"].items():
+            LOGGER.warning("adapter=%s error=%s", name, error)
+
     rows: List[Dict[str, str]] = []
     seen = set()
+    futures_filtered = []
+    excluded_by_filter = 0
+    keyword_hits: Dict[str, int] = {}
 
     for announcement in announcements:
-        if not is_futures_announcement(announcement.title):
+        if args.no_futures_filter:
+            futures_filtered.append(announcement)
             continue
+        match = futures_keyword_match(announcement.title)
+        if not match:
+            excluded_by_filter += 1
+            continue
+        keyword_hits[match] = keyword_hits.get(match, 0) + 1
+        futures_filtered.append(announcement)
+
+    LOGGER.info("after futures filter=%s excluded=%s", len(futures_filtered), excluded_by_filter)
+    if keyword_hits:
+        LOGGER.info("futures keyword hits=%s", keyword_hits)
+    LOGGER.info("after sort=%s", len(futures_filtered))
+    for idx, announcement in enumerate(futures_filtered[:10]):
+        LOGGER.info(
+            "ticker extraction sample idx=%s title=%s tickers=%s",
+            idx,
+            announcement.title,
+            announcement.tickers,
+        )
+
+    candidates_checked = 0
+    mapped = 0
+    candle_ok = 0
+    qualified = 0
+    for announcement in futures_filtered:
         for ticker in announcement.tickers:
             if len(rows) >= args.target:
                 break
@@ -132,11 +187,13 @@ def main() -> None:
             if key in seen:
                 continue
             seen.add(key)
+            candidates_checked += 1
 
             symbols = mexc.map_ticker_to_symbols(ticker, contracts)
             if not symbols:
                 LOGGER.info("No MEXC symbol mapping for %s", ticker)
                 continue
+            mapped += 1
             at_time = announcement.published_at_utc.replace(second=0, microsecond=0)
             symbol = None
             for candidate_symbol in sorted(symbols):
@@ -159,9 +216,11 @@ def main() -> None:
                         LOGGER.warning("Live-now check failed for %s: %s", candidate_symbol, exc)
                     continue
                 symbol = candidate_symbol
+                candle_ok += 1
                 break
             if not symbol:
                 continue
+            qualified += 1
 
             window_start = at_time - timedelta(minutes=10)
             window_end = at_time + timedelta(minutes=60)
@@ -222,6 +281,13 @@ def main() -> None:
             rows.append(row)
         if len(rows) >= args.target:
             break
+    LOGGER.info(
+        "candidates checked=%s mapped=%s candle_ok=%s qualified=%s",
+        candidates_checked,
+        mapped,
+        candle_ok,
+        qualified,
+    )
 
     fieldnames = [
         "source_exchange",
@@ -249,6 +315,7 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
+    LOGGER.info("rows_written=%s", len(rows))
     LOGGER.info("Wrote %s rows to %s", len(rows), args.out)
 
 
