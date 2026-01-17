@@ -37,8 +37,12 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         total_items += len(items)
         for item in items:
             item_type = item.get("type") or item.get("category") or ""
-            if item_type:
-                type_counts[item_type] = type_counts.get(item_type, 0) + 1
+            if isinstance(item_type, list):
+                item_type_key = ",".join(str(x) for x in item_type)
+            else:
+                item_type_key = str(item_type)
+            if item_type_key:
+                type_counts[item_type_key] = type_counts.get(item_type_key, 0) + 1
             published_at = item.get("publishAt") or item.get("createdAt")
             if published_at is None:
                 continue

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import List
 
@@ -30,6 +31,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     items = list(soup.select("a.announcement-item, a.article-item, a.notice-item"))
+    LOGGER.info("Gate candidate nodes=%s", len(items))
     for item in items:
         title = item.get_text(strip=True)
         href = item.get("href", "")
@@ -57,5 +59,50 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 body="",
             )
         )
+    if announcements:
+        LOGGER.info("Gate list parsing announcements=%s", len(announcements))
+        for sample in announcements[:2]:
+            LOGGER.info("Gate sample title=%s url=%s", sample.title, sample.url)
+        return announcements
+
+    script = soup.find("script", {"id": "__NEXT_DATA__"})
+    if script and script.text:
+        try:
+            data = json.loads(script.text)
+            articles = (
+                data.get("props", {})
+                .get("pageProps", {})
+                .get("initialState", {})
+                .get("notice", {})
+                .get("list", [])
+            )
+            for item in articles:
+                title = item.get("title", "")
+                href = item.get("url", "")
+                if not title or not href:
+                    continue
+                published_ms = item.get("date") or item.get("time")
+                if not published_ms:
+                    continue
+                published = parse_datetime(item.get("dateStr", "")) if item.get("dateStr") else None
+                if not published:
+                    published = datetime.fromtimestamp(int(published_ms) / 1000, tz=timezone.utc)
+                if published.timestamp() < cutoff:
+                    continue
+                tickers = extract_tickers(title)
+                announcements.append(
+                    Announcement(
+                        source_exchange="Gate",
+                        title=title,
+                        published_at_utc=published,
+                        launch_at_utc=None,
+                        url=href,
+                        listing_type_guess=guess_listing_type(title),
+                        tickers=tickers,
+                        body="",
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Gate NEXT_DATA parse failed: %s", exc)
     LOGGER.info("Gate list parsing announcements=%s", len(announcements))
     return announcements

@@ -67,6 +67,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         data_block = data.get("data", {})
         items = data_block.get("list", [])
         LOGGER.info("Binance notice total=%s", data_block.get("total"))
+        if not data_block.get("total"):
+            LOGGER.info("Binance notice keys=%s data_keys=%s", list(data.keys()), list(data_block.keys()))
         if items:
             LOGGER.info("Binance notice first_item=%s", items[0])
         if items:
@@ -114,5 +116,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 announcements = _parse_json_list({"data": {"articles": articles}})
             except Exception:
                 announcements = []
+    if not announcements:
+        LOGGER.warning("Binance adapter produced 0 items after fallback attempts")
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     return [a for a in announcements if a.published_at_utc.timestamp() >= cutoff]

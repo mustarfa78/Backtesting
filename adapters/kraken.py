@@ -14,6 +14,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
+    LOGGER.warning("Kraken adapter disabled for futures listings (no reliable futures listing feed)")
+    return []
     url = "https://blog.kraken.com/category/asset-listings"
     response = session.get(url, timeout=20)
     LOGGER.info("Kraken request url=%s", url)
