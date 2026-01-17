@@ -41,6 +41,11 @@ SPOT_LISTING_KEYWORDS = (
     "trade starts",
     "adds",
     "new listing",
+    "asset listing",
+    "now available",
+    "trading starts",
+    "new asset",
+    "introducing",
 )
 
 def guess_listing_type(title: str) -> str:

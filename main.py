@@ -268,6 +268,8 @@ def main() -> None:
         keyword_hits: Dict[str, int] = {}
         spot_keyword_hits: Dict[str, int] = {}
         excluded_reasons: Dict[str, int] = {}
+        kraken_listing_pass = 0
+        kraken_exclusion_reasons: Dict[str, int] = {}
         per_source_filtered: Dict[str, int] = {}
         per_source_tickers: Dict[str, int] = {}
         per_source_mapped: Dict[str, int] = {}
@@ -304,11 +306,17 @@ def main() -> None:
                 excluded_by_filter += 1
                 reason_key = ";".join(reasons) if reasons else "no_match"
                 excluded_reasons[reason_key] = excluded_reasons.get(reason_key, 0) + 1
+                if announcement.source_exchange == "Kraken":
+                    kraken_exclusion_reasons[reason_key] = (
+                        kraken_exclusion_reasons.get(reason_key, 0) + 1
+                    )
                 continue
             futures_filtered.append(announcement)
             per_source_filtered[announcement.source_exchange] = (
                 per_source_filtered.get(announcement.source_exchange, 0) + 1
             )
+            if announcement.source_exchange == "Kraken":
+                kraken_listing_pass += 1
 
         LOGGER.info(
             "after listing filter=%s excluded=%s",
@@ -321,6 +329,12 @@ def main() -> None:
             LOGGER.info("spot keyword hits=%s", spot_keyword_hits)
         if excluded_reasons:
             LOGGER.info("listing exclusion reasons=%s", excluded_reasons)
+        if kraken_listing_pass or kraken_exclusion_reasons:
+            LOGGER.info(
+                "Kraken listing_filter_pass_count=%s exclusion_reasons=%s",
+                kraken_listing_pass,
+                kraken_exclusion_reasons,
+            )
         LOGGER.info("after sort=%s", len(futures_filtered))
         for idx, announcement in enumerate(futures_filtered[:10]):
             LOGGER.info(
