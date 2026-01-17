@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import List
+from xml.etree import ElementTree
 
 import logging
 
-from bs4 import BeautifulSoup
+from dateutil import parser
 
 from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
 from http_client import get_text
@@ -14,39 +15,35 @@ LOGGER = logging.getLogger(__name__)
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    LOGGER.warning("Kraken adapter disabled for futures listings (no reliable futures listing feed)")
-    return []
-    url = "https://blog.kraken.com/category/asset-listings"
-    response = session.get(url, timeout=20)
-    LOGGER.info("Kraken request url=%s", url)
-    if response.status_code in (403, 451) or response.status_code >= 500:
-        LOGGER.warning("Kraken response status=%s blocked_or_error", response.status_code)
-    LOGGER.info(
-        "Kraken response status=%s content_type=%s body_preview=%s",
-        response.status_code,
-        response.headers.get("Content-Type"),
-        response.text[:300],
-    )
-    response.raise_for_status()
-    html = response.text
-    soup = BeautifulSoup(html, "lxml")
+    LOGGER.info("Kraken adapter using RSS feed for asset listings (spot)")
+    feed_url = "https://blog.kraken.com/category/asset-listings/feed/"
+    try:
+        xml_text = get_text(session, feed_url)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Kraken RSS fetch failed: %s", exc)
+        return []
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    for article in soup.select("article"):
-        title_el = article.find(["h2", "h3"])
-        if not title_el:
+    try:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError as exc:
+        LOGGER.warning("Kraken RSS parse failed: %s", exc)
+        return []
+    for item in root.findall(".//item"):
+        title = item.findtext("title", default="").strip()
+        link = item.findtext("link", default="").strip()
+        pub_date = item.findtext("pubDate", default="").strip()
+        if not title or not link or not pub_date:
             continue
-        title = title_el.get_text(strip=True)
-        link_el = title_el.find("a")
-        if not link_el:
-            continue
-        full_url = link_el.get("href", "")
-        time_el = article.find("time")
-        published = None
-        if time_el and time_el.get("datetime"):
-            published = parse_datetime(time_el["datetime"])
+        published = parse_datetime(pub_date)
+        if not published:
+            try:
+                published = parser.parse(pub_date)
+            except (ValueError, TypeError):
+                published = None
         if not published:
             continue
+        published = published.astimezone(timezone.utc)
         if published.timestamp() < cutoff:
             continue
         tickers = extract_tickers(title)
@@ -56,7 +53,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 title=title,
                 published_at_utc=published,
                 launch_at_utc=None,
-                url=full_url,
+                url=link,
                 listing_type_guess=guess_listing_type(title),
                 tickers=tickers,
                 body="",

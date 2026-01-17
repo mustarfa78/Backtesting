@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import List
 
@@ -9,9 +10,17 @@ from bs4 import BeautifulSoup
 import logging
 
 from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
-from http_client import get_json, get_text
+from http_client import get_text
 
 LOGGER = logging.getLogger(__name__)
+
+_BINANCE_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.binance.com/en/support/announcement",
+    "clienttype": "web",
+    "Accept": "application/json, text/plain, */*",
+}
 
 
 def _parse_json_list(data: dict) -> List[Announcement]:
@@ -41,18 +50,40 @@ def _parse_json_list(data: dict) -> List[Announcement]:
     return announcements
 
 
+def _fetch_cms_articles(session) -> List[Announcement]:
+    cms_url = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
+    param_sets = [
+        {"type": 1, "pageNo": 1, "pageSize": 50, "catalogId": 48, "lang": "en"},
+        {"type": 1, "pageNo": 1, "pageSize": 50, "catalogId": 49, "lang": "en"},
+        {"type": 1, "pageNo": 1, "pageSize": 50, "lang": "en"},
+    ]
+    announcements: List[Announcement] = []
+    for params in param_sets:
+        LOGGER.info("Binance CMS url=%s params=%s", cms_url, params)
+        response = session.get(cms_url, params=params, headers=_BINANCE_HEADERS, timeout=20)
+        LOGGER.info(
+            "Binance CMS response status=%s content_type=%s body_preview=%s",
+            response.status_code,
+            response.headers.get("Content-Type"),
+            response.text[:300],
+        )
+        if response.status_code in (403, 451) or response.status_code >= 500:
+            LOGGER.warning("Binance CMS response status=%s blocked_or_error", response.status_code)
+            continue
+        response.raise_for_status()
+        cms_data = response.json()
+        announcements.extend(_parse_json_list(cms_data))
+        if announcements:
+            break
+    return announcements
+
+
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://www.binance.com/bapi/composite/v1/public/market/notice/get"
     params = {"page": 1, "rows": 50, "type": 1}
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.binance.com/en/support/announcement",
-        "clienttype": "web",
-    }
     announcements: List[Announcement] = []
     try:
-        response = session.get(url, params=params, headers=headers, timeout=20)
+        response = session.get(url, params=params, headers=_BINANCE_HEADERS, timeout=20)
         LOGGER.info(
             "Binance request url=%s params=%s cache=%s",
             url,
@@ -100,27 +131,55 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     )
                 )
         else:
-            cms_url = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
-            cms_params = {"type": 1, "pageNo": 1, "pageSize": 50, "catalogId": 48, "lang": "en"}
-            LOGGER.info("Binance fallback url=%s params=%s", cms_url, cms_params)
-            cms_data = get_json(session, cms_url, params=cms_params)
-            announcements = _parse_json_list(cms_data)
+            announcements = _fetch_cms_articles(session)
     except Exception:
-        html = get_text(session, "https://www.binance.com/en/support/announcement")
-        soup = BeautifulSoup(html, "lxml")
-        script = soup.find("script", {"id": "__APP_DATA"})
-        if script and script.text:
+        announcements = _fetch_cms_articles(session)
+        if not announcements:
             try:
-                data = json.loads(script.text)
-                articles = (
-                    data.get("appState", {})
-                    .get("composite", {})
-                    .get("articleList", {})
-                    .get("articles", [])
+                response = session.get(
+                    "https://www.binance.com/en/support/announcement",
+                    headers=_BINANCE_HEADERS,
+                    timeout=20,
                 )
-                announcements = _parse_json_list({"data": {"articles": articles}})
+                if response.status_code == 202:
+                    LOGGER.warning("Binance HTML response status=202 blocked_or_challenge")
+                else:
+                    response.raise_for_status()
+                    html = response.text
+                    soup = BeautifulSoup(html, "lxml")
+                    script = soup.find("script", {"id": "__APP_DATA"})
+                    if script and script.text:
+                        data = json.loads(script.text)
+                        articles = (
+                            data.get("appState", {})
+                            .get("composite", {})
+                            .get("articleList", {})
+                            .get("articles", [])
+                        )
+                        announcements = _parse_json_list({"data": {"articles": articles}})
+                    if not announcements:
+                        build_id_match = re.search(r'"buildId"\s*:\s*"([^"]+)"', html)
+                        if build_id_match:
+                            build_id = build_id_match.group(1)
+                            next_url = (
+                                f"https://www.binance.com/_next/data/{build_id}/en/support/announcement.json"
+                            )
+                            next_response = session.get(
+                                next_url, headers=_BINANCE_HEADERS, timeout=20
+                            )
+                            if next_response.status_code != 202:
+                                next_response.raise_for_status()
+                                next_data = next_response.json()
+                                articles = (
+                                    next_data.get("pageProps", {})
+                                    .get("appState", {})
+                                    .get("composite", {})
+                                    .get("articleList", {})
+                                    .get("articles", [])
+                                )
+                                announcements = _parse_json_list({"data": {"articles": articles}})
             except Exception:
-                announcements = []
+                announcements = announcements or []
     if not announcements:
         LOGGER.warning("Binance adapter produced 0 items after fallback attempts")
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
