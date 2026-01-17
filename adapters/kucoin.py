@@ -12,11 +12,13 @@ LOGGER = logging.getLogger(__name__)
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://api.kucoin.com/api/ua/v1/market/announcement"
-    types = ["listing", "contract", "derivatives", "all"]
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    for ann_type in types:
-        params = {"language": "en_US", "pageNumber": 1, "pageSize": 50, "type": ann_type}
+    page = 1
+    total_items = 0
+    type_counts: Dict[str, int] = {}
+    while True:
+        params = {"language": "en_US", "pageNumber": page, "pageSize": 50}
         response = session.get(url, params=params, timeout=20)
         LOGGER.info("KuCoin request url=%s params=%s", url, params)
         if response.status_code in (403, 451) or response.status_code >= 500:
@@ -30,7 +32,13 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         response.raise_for_status()
         data = response.json()
         items = data.get("data", {}).get("items", []) or data.get("data", {}).get("list", [])
+        if not items:
+            break
+        total_items += len(items)
         for item in items:
+            item_type = item.get("type") or item.get("category") or ""
+            if item_type:
+                type_counts[item_type] = type_counts.get(item_type, 0) + 1
             published_at = item.get("publishAt") or item.get("createdAt")
             if published_at is None:
                 continue
@@ -39,7 +47,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 continue
             title = item.get("title", "")
             body = item.get("summary", "") or item.get("content", "")
-            url = item.get("url", "")
+            url_value = item.get("url", "")
             tickers = extract_tickers(f"{title} {body}")
             announcements.append(
                 Announcement(
@@ -47,10 +55,16 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     title=title,
                     published_at_utc=published,
                     launch_at_utc=None,
-                    url=url,
+                    url=url_value,
                     listing_type_guess=guess_listing_type(title),
                     tickers=tickers,
                     body=body,
                 )
             )
+        if page >= 10:
+            break
+        page += 1
+    if type_counts:
+        LOGGER.info("KuCoin type distribution=%s", type_counts)
+    LOGGER.info("KuCoin total_items=%s in_window=%s", total_items, len(announcements))
     return announcements

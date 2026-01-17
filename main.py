@@ -209,6 +209,11 @@ def main() -> None:
     excluded_by_filter = 0
     keyword_hits: Dict[str, int] = {}
     excluded_reasons: Dict[str, int] = {}
+    per_source_filtered: Dict[str, int] = {}
+    per_source_tickers: Dict[str, int] = {}
+    per_source_mapped: Dict[str, int] = {}
+    per_source_candle_ok: Dict[str, int] = {}
+    per_source_rows: Dict[str, int] = {}
 
     for announcement in announcements:
         if args.no_futures_filter:
@@ -224,6 +229,9 @@ def main() -> None:
             continue
         keyword_hits[match] = keyword_hits.get(match, 0) + 1
         futures_filtered.append(announcement)
+        per_source_filtered[announcement.source_exchange] = (
+            per_source_filtered.get(announcement.source_exchange, 0) + 1
+        )
 
     LOGGER.info("after futures filter=%s excluded=%s", len(futures_filtered), excluded_by_filter)
     if keyword_hits:
@@ -244,6 +252,10 @@ def main() -> None:
     candle_ok = 0
     qualified = 0
     for announcement in futures_filtered:
+        if announcement.tickers:
+            per_source_tickers[announcement.source_exchange] = (
+                per_source_tickers.get(announcement.source_exchange, 0) + 1
+            )
         for ticker in announcement.tickers:
             if len(rows) >= args.target:
                 break
@@ -258,6 +270,9 @@ def main() -> None:
                 LOGGER.info("No MEXC symbol mapping for %s", ticker)
                 continue
             mapped += 1
+            per_source_mapped[announcement.source_exchange] = (
+                per_source_mapped.get(announcement.source_exchange, 0) + 1
+            )
             at_time = announcement.published_at_utc.replace(second=0, microsecond=0)
             symbol = None
             for candidate_symbol in sorted(symbols):
@@ -281,6 +296,9 @@ def main() -> None:
                     continue
                 symbol = candidate_symbol
                 candle_ok += 1
+                per_source_candle_ok[announcement.source_exchange] = (
+                    per_source_candle_ok.get(announcement.source_exchange, 0) + 1
+                )
                 break
             if not symbol:
                 continue
@@ -343,6 +361,9 @@ def main() -> None:
                 "notes": "; ".join(notes),
             }
             rows.append(row)
+            per_source_rows[announcement.source_exchange] = (
+                per_source_rows.get(announcement.source_exchange, 0) + 1
+            )
         if len(rows) >= args.target:
             break
     LOGGER.info(
@@ -352,6 +373,11 @@ def main() -> None:
         candle_ok,
         qualified,
     )
+    LOGGER.info("per_source filtered=%s", per_source_filtered)
+    LOGGER.info("per_source tickers_extracted=%s", per_source_tickers)
+    LOGGER.info("per_source mexc_mapped_ok=%s", per_source_mapped)
+    LOGGER.info("per_source mexc_candle_ok=%s", per_source_candle_ok)
+    LOGGER.info("per_source final_rows=%s", per_source_rows)
 
     fieldnames = [
         "source_exchange",

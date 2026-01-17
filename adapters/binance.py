@@ -43,7 +43,7 @@ def _parse_json_list(data: dict) -> List[Announcement]:
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://www.binance.com/bapi/composite/v1/public/market/notice/get"
-    params = {"page": 1, "rows": 50}
+    params = {"page": 1, "rows": 50, "type": 1}
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept-Language": "en-US,en;q=0.9",
@@ -64,7 +64,11 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         )
         response.raise_for_status()
         data = response.json()
-        items = data.get("data", {}).get("list", [])
+        data_block = data.get("data", {})
+        items = data_block.get("list", [])
+        LOGGER.info("Binance notice total=%s", data_block.get("total"))
+        if items:
+            LOGGER.info("Binance notice first_item=%s", items[0])
         if items:
             for item in items:
                 timestamp = item.get("releaseDate") or item.get("publishDate")
