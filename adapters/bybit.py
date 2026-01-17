@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://api.bybit.com/v5/announcements/index"
-    params = {"annType": "derivatives", "language": "en-US", "limit": 50}
+    params = {"locale": "en-US", "limit": 50}
     response = session.get(url, params=params, timeout=20)
     LOGGER.info("Bybit request url=%s params=%s", url, params)
     if response.status_code in (403, 451) or response.status_code >= 500:
@@ -25,6 +25,11 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     )
     response.raise_for_status()
     data = response.json()
+    ret_code = data.get("retCode")
+    ret_msg = data.get("retMsg")
+    LOGGER.info("Bybit retCode=%s retMsg=%s", ret_code, ret_msg)
+    if ret_code not in (0, "0", None):
+        return []
     items = data.get("result", {}).get("list", [])
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
@@ -36,8 +41,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if published.timestamp() < cutoff:
             continue
         title = item.get("title", "")
+        body = item.get("summary", "") or item.get("content", "")
         url = item.get("url", "")
-        tickers = extract_tickers(title)
+        tickers = extract_tickers(f"{title} {body}")
         announcements.append(
             Announcement(
                 source_exchange="Bybit",
@@ -47,6 +53,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 url=url,
                 listing_type_guess=guess_listing_type(title),
                 tickers=tickers,
+                body=body,
             )
         )
     return announcements

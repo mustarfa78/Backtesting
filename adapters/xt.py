@@ -39,6 +39,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     url=url,
                     listing_type_guess=guess_listing_type(title),
                     tickers=tickers,
+                    body="",
                 )
             )
         if not data.get("next_page"):

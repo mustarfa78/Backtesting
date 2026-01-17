@@ -90,6 +90,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=str, default="events.csv", help="Output CSV path")
     parser.add_argument("--no-futures-filter", action="store_true", help="Disable futures-only filtering")
     parser.add_argument("--debug-adapters", action="store_true", help="Print sample adapter items")
+    parser.add_argument("--no-cache", action="store_true", help="Disable HTTP cache")
+    parser.add_argument("--clear-cache", action="store_true", help="Clear HTTP cache before run")
     parser.add_argument("--debug-ticker", type=str, default="", help="Ticker to debug mapping/klines")
     parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
     parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
@@ -143,7 +145,7 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    session = get_session()
+    session = get_session(use_cache=not args.no_cache, clear_cache=args.clear_cache)
     announcements, adapter_stats = fetch_all_announcements(session, args.days)
     mexc = MexcFuturesClient(session)
     contracts = mexc.list_contracts()
@@ -212,8 +214,9 @@ def main() -> None:
         if args.no_futures_filter:
             futures_filtered.append(announcement)
             continue
-        match = futures_keyword_match(announcement.title)
-        allowed, reasons = _passes_futures_intent(announcement.title)
+        text = f"{announcement.title} {announcement.body}".strip()
+        match = futures_keyword_match(text)
+        allowed, reasons = _passes_futures_intent(text)
         if not match or not allowed:
             excluded_by_filter += 1
             reason_key = ";".join(reasons) if reasons else "no_match"

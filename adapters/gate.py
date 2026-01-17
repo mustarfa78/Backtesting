@@ -56,6 +56,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 url=full_url,
                 listing_type_guess=guess_listing_type(title),
                 tickers=tickers,
+                body="",
             )
         )
     if announcements:
@@ -83,6 +84,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 url=f"https://www.gate.io/announcements/article/{article_id}",
                 listing_type_guess=guess_listing_type(title),
                 tickers=tickers,
+                body="",
             )
         )
     return announcements

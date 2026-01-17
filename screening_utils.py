@@ -152,10 +152,27 @@ _PAIR_PATTERN = re.compile(
 )
 
 
-def get_session() -> requests.Session:
-    session = requests.Session()
+def get_session(use_cache: bool = True, clear_cache: bool = False) -> requests.Session:
+    if use_cache:
+        import requests_cache
+
+        session: requests.Session = requests_cache.CachedSession(
+            cache_name="http_cache",
+            backend="sqlite",
+            expire_after=3600,
+        )
+        if clear_cache and isinstance(session, requests_cache.CachedSession):
+            session.cache.clear()
+    else:
+        session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(max_retries=3)
     session.mount("https://", adapter)
+    session.headers.update(
+        {
+            "User-Agent": "mexc-futures-listing-analyzer/1.0",
+            "Accept": "application/json, text/plain, */*",
+        }
+    )
     return session
 
 

@@ -3,14 +3,28 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 
+import logging
+
 from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
-from http_client import get_json
+
+LOGGER = logging.getLogger(__name__)
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://api.bitget.com/api/v2/public/annoucements"
-    params = {"annType": "coin_listings", "language": "en_US"}
-    data = get_json(session, url, params=params)
+    params = {"annType": "coin_listings", "annSubType": "futures", "language": "en_US"}
+    response = session.get(url, params=params, timeout=20)
+    LOGGER.info("Bitget request url=%s params=%s", url, params)
+    if response.status_code in (403, 451) or response.status_code >= 500:
+        LOGGER.warning("Bitget response status=%s blocked_or_error", response.status_code)
+    LOGGER.info(
+        "Bitget response status=%s content_type=%s body_preview=%s",
+        response.status_code,
+        response.headers.get("Content-Type"),
+        response.text[:300],
+    )
+    response.raise_for_status()
+    data = response.json()
     items = data.get("data", [])
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
@@ -22,8 +36,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if published.timestamp() < cutoff:
             continue
         title = item.get("title", "")
+        body = item.get("content", "") or item.get("summary", "")
         url = item.get("url", "")
-        tickers = extract_tickers(title)
+        tickers = extract_tickers(f"{title} {body}")
         announcements.append(
             Announcement(
                 source_exchange="Bitget",
@@ -33,6 +48,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 url=url,
                 listing_type_guess=guess_listing_type(title),
                 tickers=tickers,
+                body=body,
             )
         )
     return announcements

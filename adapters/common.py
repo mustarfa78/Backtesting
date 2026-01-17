@@ -18,6 +18,7 @@ class Announcement:
     url: str
     listing_type_guess: str
     tickers: List[str]
+    body: str
 
 
 FUTURES_KEYWORDS = (
