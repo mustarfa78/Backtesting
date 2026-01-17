@@ -147,6 +147,9 @@ _mexc_base_to_symbols: Dict[str, Set[str]] = {}
 _extract_log_lock = threading.Lock()
 _extract_log_count = 0
 _EXTRACT_LOG_LIMIT = 10
+_PAIR_PATTERN = re.compile(
+    r"([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB)"
+)
 
 
 def get_session() -> requests.Session:
@@ -198,8 +201,7 @@ def mark_seen(source: str, uniq: str) -> bool:
 
 def extract_tickers(text: str) -> List[str]:
     upper = text.upper()
-    pair_pattern = re.compile(r"([A-Z0-9]{2,15})\\s*[-_/]?\\s*(USDT|USDC|USD|BTC|ETH|BNB)")
-    matches = pair_pattern.findall(upper)
+    matches = _PAIR_PATTERN.findall(upper)
 
     bases: Set[str] = set()
     for base, quote in matches:
@@ -213,7 +215,8 @@ def extract_tickers(text: str) -> List[str]:
     with _extract_log_lock:
         if _extract_log_count < _EXTRACT_LOG_LIMIT:
             LOGGER.info(
-                "extract_tickers raw=%s upper=%s matches=%s result=%s",
+                "extract_tickers pattern=%s raw=%s upper=%s matches=%s result=%s",
+                _PAIR_PATTERN.pattern,
                 text,
                 upper,
                 matches,
@@ -222,6 +225,21 @@ def extract_tickers(text: str) -> List[str]:
             _extract_log_count += 1
 
     return result
+
+
+if __name__ == "__main__":
+    import unittest
+
+    class ExtractTickerTests(unittest.TestCase):
+        def test_extract_concatenated_pairs(self):
+            title = "XT.COM Futures Will Launch USDT-M FRAXUSDT and LITUSDT Perpetual Futures"
+            self.assertEqual(extract_tickers(title), ["FRAX", "LIT"])
+
+        def test_extract_single_pair(self):
+            title = "Adjusting ... for MEUSDT Perpetual Contracts"
+            self.assertEqual(extract_tickers(title), ["ME"])
+
+    unittest.main()
 
 
 def _refresh_binance_futures_cache(session):
