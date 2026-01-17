@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
 from http_client import get_json
 
 
@@ -17,7 +17,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         timestamp = item.get("dateTimestamp") or item.get("date")
         if not timestamp:
             continue
-        published = datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc)
+        published = ensure_utc(datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc))
         if published.timestamp() < cutoff:
             continue
         title = item.get("title", "")

@@ -5,7 +5,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type
+from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
 from http_client import get_text
 
 
@@ -24,10 +24,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         time_el = item.find("time")
         published = None
         if time_el and time_el.get("datetime"):
-            try:
-                published = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00"))
-            except ValueError:
-                published = None
+            published = parse_datetime(time_el["datetime"])
         if not published:
             continue
         if published.timestamp() < cutoff:

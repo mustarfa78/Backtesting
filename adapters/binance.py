@@ -6,7 +6,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
 from http_client import get_json, get_text
 
 
@@ -17,7 +17,7 @@ def _parse_json_list(data: dict) -> List[Announcement]:
         timestamp = item.get("releaseDate")
         if not timestamp:
             continue
-        published = datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc)
+        published = ensure_utc(datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc))
         title = item.get("title", "")
         url = f"https://www.binance.com/en/support/announcement/{item.get('code','')}"
         tickers = extract_tickers(title)

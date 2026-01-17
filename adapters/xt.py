@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type
+from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
 from http_client import get_json
 
 
@@ -19,7 +19,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             published_at = item.get("created_at")
             if not published_at:
                 continue
-            published = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+            parsed = parse_datetime(published_at)
+            if not parsed:
+                continue
+            published = parsed
             if published.timestamp() < cutoff:
                 continue
             title = item.get("title", "")

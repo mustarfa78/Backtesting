@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable, List, Optional
+
+from dateutil import parser
 
 
 @dataclass(frozen=True)
@@ -80,3 +82,19 @@ def extract_tickers(title: str) -> List[str]:
         if token not in tickers:
             tickers.append(token)
     return tickers
+
+
+def ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_datetime(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = parser.isoparse(value)
+    except (ValueError, TypeError):
+        return None
+    return ensure_utc(parsed)
