@@ -17,6 +17,7 @@ class Announcement:
     launch_at_utc: Optional[datetime]
     url: str
     listing_type_guess: str
+    market_type: str
     tickers: List[str]
     body: str
 
@@ -32,6 +33,22 @@ FUTURES_KEYWORDS = (
     "innovation",
 )
 
+SPOT_LISTING_KEYWORDS = (
+    "will list",
+    "listing",
+    "spot trading",
+    "available to trade",
+    "available for trading",
+    "trade starts",
+    "adds",
+    "new listing",
+    "asset listing",
+    "now available",
+    "trading starts",
+    "new asset",
+    "introducing",
+)
+
 def guess_listing_type(title: str) -> str:
     lowered = title.lower()
     if "premarket" in lowered:
@@ -42,6 +59,8 @@ def guess_listing_type(title: str) -> str:
         return "innovation"
     if "futures" in lowered or "contract" in lowered or "swap" in lowered:
         return "futures"
+    if spot_keyword_match(lowered):
+        return "spot"
     return "unknown"
 
 
@@ -59,6 +78,22 @@ def futures_keyword_match(title: str, extra_keywords: Iterable[str] | None = Non
         if keyword in lowered:
             return keyword
     return None
+
+
+def spot_keyword_match(text: str) -> Optional[str]:
+    lowered = text.lower()
+    for keyword in SPOT_LISTING_KEYWORDS:
+        if keyword in lowered:
+            return keyword
+    return None
+
+
+def infer_market_type(text: str, default: str = "futures") -> str:
+    if futures_keyword_match(text):
+        return "futures"
+    if spot_keyword_match(text):
+        return "spot"
+    return default
 
 
 def ensure_utc(dt: datetime) -> datetime:

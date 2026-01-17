@@ -1,65 +1,94 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List
+from html import unescape
+import re
+from typing import List, Optional
 
 import logging
 
-from bs4 import BeautifulSoup
-
-from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
-from http_client import get_text
+from adapters.common import Announcement, extract_tickers, guess_listing_type, infer_market_type
+from http_client import get_json
 
 LOGGER = logging.getLogger(__name__)
 
+_KRAKEN_AVAILABLE_RE = re.compile(
+    r"^\\s*([A-Z0-9]{2,15})\\s+is\\s+(?:now\\s+)?available\\s+for\\s+trading!?",
+    re.IGNORECASE,
+)
+
+
+def _fetch_asset_listing_category_id(session) -> Optional[int]:
+    category_url = "https://blog.kraken.com/wp-json/wp/v2/categories"
+    try:
+        categories = get_json(session, category_url, params={"slug": "asset-listings"})
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Kraken category fetch failed: %s", exc)
+        return None
+    if isinstance(categories, list) and categories:
+        category_id = categories[0].get("id")
+        if category_id:
+            return int(category_id)
+    return None
+
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    LOGGER.warning("Kraken adapter disabled for futures listings (no reliable futures listing feed)")
-    return []
-    url = "https://blog.kraken.com/category/asset-listings"
-    response = session.get(url, timeout=20)
-    LOGGER.info("Kraken request url=%s", url)
-    if response.status_code in (403, 451) or response.status_code >= 500:
-        LOGGER.warning("Kraken response status=%s blocked_or_error", response.status_code)
-    LOGGER.info(
-        "Kraken response status=%s content_type=%s body_preview=%s",
-        response.status_code,
-        response.headers.get("Content-Type"),
-        response.text[:300],
-    )
-    response.raise_for_status()
-    html = response.text
-    soup = BeautifulSoup(html, "lxml")
+    LOGGER.info("Kraken adapter using WP JSON feed for asset listings (spot)")
+    feed_url = "https://blog.kraken.com/wp-json/wp/v2/posts"
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    for article in soup.select("article"):
-        title_el = article.find(["h2", "h3"])
-        if not title_el:
+    category_id = _fetch_asset_listing_category_id(session)
+    params = {"per_page": 50}
+    if category_id:
+        params["categories"] = category_id
+    try:
+        posts = get_json(session, feed_url, params=params)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Kraken WP JSON fetch failed: %s", exc)
+        return announcements
+    titles_sample = []
+    listing_pass = 0
+    for post in posts or []:
+        title = (post.get("title") or {}).get("rendered", "") or ""
+        title = unescape(title).strip()
+        link = post.get("link", "")
+        content = (post.get("content") or {}).get("rendered", "") or ""
+        date_gmt = post.get("date_gmt")
+        if not title or not link or not date_gmt:
             continue
-        title = title_el.get_text(strip=True)
-        link_el = title_el.find("a")
-        if not link_el:
-            continue
-        full_url = link_el.get("href", "")
-        time_el = article.find("time")
-        published = None
-        if time_el and time_el.get("datetime"):
-            published = parse_datetime(time_el["datetime"])
-        if not published:
-            continue
+        published = datetime.fromisoformat(date_gmt.replace("Z", "+00:00")).astimezone(
+            timezone.utc
+        )
         if published.timestamp() < cutoff:
             continue
-        tickers = extract_tickers(title)
+        content_text = re.sub(r"<.*?>", " ", content)
+        tickers = extract_tickers(f"{title} {content_text}")
+        if not tickers:
+            match = _KRAKEN_AVAILABLE_RE.search(title)
+            if match:
+                tickers = [match.group(1).upper()]
+        market_type = infer_market_type(title, default="spot")
+        if len(titles_sample) < 10:
+            titles_sample.append(title)
+        if market_type == "spot":
+            listing_pass += 1
         announcements.append(
             Announcement(
                 source_exchange="Kraken",
-                title=title,
+                title=title.strip(),
                 published_at_utc=published,
                 launch_at_utc=None,
-                url=full_url,
+                url=link,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body="",
             )
         )
+    LOGGER.info(
+        "Kraken fetched_count=%s listing_filter_pass_count=%s sample_titles=%s",
+        len(announcements),
+        listing_pass,
+        titles_sample,
+    )
     return announcements

@@ -5,7 +5,7 @@ from typing import List
 
 import logging
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc, infer_market_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         body = item.get("content", "") or item.get("summary", "") or item.get("annDesc", "")
         url = item.get("url", "") or item.get("annUrl", "")
         tickers = extract_tickers(f"{title} {body}")
+        market_type = infer_market_type(f"{title} {body}", default="futures")
         if idx < 10:
             LOGGER.info(
                 "Bitget sample title=%s annType=%s annSubType=%s tickers=%s",
@@ -55,6 +56,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 launch_at_utc=None,
                 url=url,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body=body,
             )

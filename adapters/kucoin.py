@@ -5,7 +5,7 @@ from typing import Dict, List
 
 import logging
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc, infer_market_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             body = item.get("summary", "") or item.get("content", "")
             url_value = item.get("url", "")
             tickers = extract_tickers(f"{title} {body}")
+            market_type = infer_market_type(f"{title} {body}", default="futures")
             announcements.append(
                 Announcement(
                     source_exchange="KuCoin",
@@ -71,6 +72,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     launch_at_utc=None,
                     url=url_value,
                     listing_type_guess=guess_listing_type(title),
+                    market_type=market_type,
                     tickers=tickers,
                     body=body,
                 )

@@ -150,6 +150,7 @@ _EXTRACT_LOG_LIMIT = 10
 _PAIR_PATTERN = re.compile(
     r"([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB)"
 )
+_PAREN_TICKER_PATTERN = re.compile(r"\\(([A-Z0-9]{2,15})\\)")
 
 
 def get_session(use_cache: bool = True, clear_cache: bool = False) -> requests.Session:
@@ -219,10 +220,14 @@ def mark_seen(source: str, uniq: str) -> bool:
 def extract_tickers(text: str) -> List[str]:
     upper = text.upper()
     matches = _PAIR_PATTERN.findall(upper)
+    paren_matches = _PAREN_TICKER_PATTERN.findall(upper)
 
     bases: Set[str] = set()
     for base, quote in matches:
         if quote in PAIR_QUOTES and base:
+            bases.add(base)
+    for base in paren_matches:
+        if base:
             bases.add(base)
 
     filtered = [base for base in bases if base not in IGNORE_WORDS]
