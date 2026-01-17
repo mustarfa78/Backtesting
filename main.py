@@ -107,6 +107,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
     parser.add_argument("--debug-window-min", type=int, default=60, help="Minutes for debug kline window")
     parser.add_argument("--log-file", type=str, default="run.log", help="Log file path")
+    parser.add_argument("--resume", action="store_true", help="Resume from saved scan state")
+    parser.add_argument("--reset-state", action="store_true", help="Ignore saved scan state")
     return parser.parse_args()
 
 
@@ -210,9 +212,6 @@ def main() -> None:
     scanned_windows: set[tuple[str, int]] = set()
 
     while True:
-        if any((name, days_window) in scanned_windows for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]):
-            summary_lines.append(f"window {days_window} already scanned, stopping")
-            break
         for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]:
             scanned_windows.add((name, days_window))
 

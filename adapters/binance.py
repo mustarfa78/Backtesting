@@ -83,8 +83,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             announcements = _parse_json_list(data)
             if announcements:
                 break
-    except Exception:
-        announcements = []
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"binance parse failed: {exc}") from exc
     if not announcements:
         LOGGER.warning("Binance adapter produced 0 items after CMS attempts")
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400

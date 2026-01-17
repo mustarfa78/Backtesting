@@ -68,6 +68,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
 
         fetched_pages += 1
         total_items += len(items)
+        new_ids = 0
+        oldest_ts = None
         for item in items:
             type_key, tag_key = _extract_type_tag(item)
             if type_key:
@@ -78,6 +80,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             timestamp = item.get("dateTimestamp") or item.get("date")
             if not timestamp:
                 continue
+            if oldest_ts is None or int(timestamp) < oldest_ts:
+                oldest_ts = int(timestamp)
             published = ensure_utc(datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc))
             if published.timestamp() < cutoff:
                 continue
@@ -106,6 +110,13 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     body=body,
                 )
             )
+            new_ids += 1
+        if oldest_ts is not None:
+            oldest_time = ensure_utc(datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc))
+            if oldest_time.timestamp() < cutoff:
+                break
+        if new_ids == 0:
+            break
         if page == 1:
             if type_counts:
                 LOGGER.info("Bybit type distribution=%s", dict(type_counts.most_common(10)))
