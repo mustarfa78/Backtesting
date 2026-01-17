@@ -15,9 +15,14 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     page = 1
+    last_page = None
+    max_pages = 50
     total_items = 0
     type_counts: Dict[str, int] = {}
     while True:
+        if last_page is not None and page == last_page:
+            raise RuntimeError("safety stop: pagination not advancing")
+        last_page = page
         params = {"language": "en_US", "pageNumber": page, "pageSize": 50}
         response = session.get(url, params=params, timeout=20)
         LOGGER.info("KuCoin request url=%s params=%s", url, params)
@@ -75,8 +80,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     body=body,
                 )
             )
-        if page >= 10:
-            break
+        if page >= max_pages:
+            raise RuntimeError("safety stop: max_pages reached")
         page += 1
     if type_counts:
         LOGGER.info("KuCoin type distribution=%s", type_counts)

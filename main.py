@@ -110,7 +110,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_all_announcements(session, days: int) -> tuple[List[Announcement], dict]:
+def fetch_all_announcements(session, days: int, seen_event_ids: set[str]) -> tuple[List[Announcement], dict]:
     adapters = [
         ("Binance", fetch_binance),
         ("Bybit", fetch_bybit),
@@ -121,14 +121,32 @@ def fetch_all_announcements(session, days: int) -> tuple[List[Announcement], dic
         ("Bitget", fetch_bitget),
     ]
     announcements: List[Announcement] = []
-    stats = {"counts": {}, "errors": {}, "samples": {}}
+    stats = {"counts": {}, "errors": {}, "samples": {}, "raw_counts": {}, "duplicates": {}}
     for name, adapter in adapters:
         try:
             items = adapter(session, days=days)
-            stats["counts"][name] = len(items)
-            stats["samples"][name] = items[:3]
-            announcements.extend(items)
-            LOGGER.info("adapter=%s announcements=%s", name, len(items))
+            stats["raw_counts"][name] = len(items)
+            unique_items = []
+            duplicates = 0
+            for item in items:
+                event_id = item.url or f"{item.published_at_utc.isoformat()}:{item.title.strip()}"
+                event_id = f"{item.source_exchange}:{event_id}"
+                if event_id in seen_event_ids:
+                    duplicates += 1
+                    continue
+                seen_event_ids.add(event_id)
+                unique_items.append(item)
+            stats["counts"][name] = len(unique_items)
+            stats["duplicates"][name] = duplicates
+            stats["samples"][name] = unique_items[:3]
+            announcements.extend(unique_items)
+            LOGGER.info(
+                "adapter=%s announcements=%s raw=%s duplicates=%s",
+                name,
+                len(unique_items),
+                stats["raw_counts"][name],
+                duplicates,
+            )
         except Exception as exc:  # noqa: BLE001
             stats["errors"][name] = str(exc)
             LOGGER.warning("Adapter %s failed: %s", name, exc, exc_info=True)
@@ -188,9 +206,17 @@ def main() -> None:
     adapter_stats = {}
     rows: List[Dict[str, str]] = []
     summary_lines: List[str] = []
+    seen_event_ids: set[str] = set()
+    scanned_windows: set[tuple[str, int]] = set()
 
     while True:
-        announcements, adapter_stats = fetch_all_announcements(session, days_window)
+        if any((name, days_window) in scanned_windows for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]):
+            summary_lines.append(f"window {days_window} already scanned, stopping")
+            break
+        for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]:
+            scanned_windows.add((name, days_window))
+
+        announcements, adapter_stats = fetch_all_announcements(session, days_window, seen_event_ids)
 
         if args.debug_adapters:
             for name, samples in adapter_stats["samples"].items():
@@ -244,6 +270,9 @@ def main() -> None:
                 LOGGER.info("adapter=%s announcements=%s", name, count)
             for name, error in adapter_stats["errors"].items():
                 LOGGER.warning("adapter=%s error=%s", name, error)
+        if len(seen_event_ids) > 50000:
+            summary_lines.append("safety stop: max_total_announcements_seen exceeded")
+            break
 
         rows = []
         seen = set()
@@ -447,6 +476,11 @@ def main() -> None:
             else:
                 reason = "0 rows after processing"
             summary_lines.append(f"adapter={name} zero rows reason={reason}")
+        for name, raw in adapter_stats.get("raw_counts", {}).items():
+            summary_lines.append(
+                f"adapter={name} fetched_raw={raw} unique_new={adapter_stats['counts'].get(name, 0)} "
+                f"duplicates_dropped={adapter_stats.get('duplicates', {}).get(name, 0)}"
+            )
         if rows or days_window >= max_days:
             if len(rows) < args.target:
                 summary_lines.append(

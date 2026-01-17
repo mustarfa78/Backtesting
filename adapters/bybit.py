@@ -31,14 +31,19 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     items_after_filter = 0
 
     page = 1
+    last_page = None
     selected_type = None
     selected_tag = None
+    max_pages = 50
     while True:
         params = {"locale": "en-US", "limit": 50, "page": page}
         if selected_type:
             params["type"] = selected_type
         if selected_tag:
             params["tag"] = selected_tag
+        if last_page is not None and page == last_page:
+            raise RuntimeError("safety stop: pagination not advancing")
+        last_page = page
         response = session.get(url, params=params, timeout=20)
         LOGGER.info("Bybit request url=%s params=%s", url, params)
         if response.status_code in (403, 451) or response.status_code >= 500:
@@ -114,8 +119,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 if "perp" in key.lower() or "futures" in key.lower():
                     selected_tag = key
                     break
-        if page >= 10:
-            break
+        if page >= max_pages:
+            raise RuntimeError("safety stop: max_pages reached")
         page += 1
 
     items_after_filter = len(announcements)
