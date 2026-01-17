@@ -12,7 +12,10 @@ from http_client import get_json
 
 LOGGER = logging.getLogger(__name__)
 
-_KRAKEN_AVAILABLE_RE = re.compile(r"\\b([A-Z0-9]{2,10})\\b\\s+is\\s+available\\s+for\\s+trading", re.IGNORECASE)
+_KRAKEN_AVAILABLE_RE = re.compile(
+    r"\\b([A-Z0-9]{2,10})\\b\\s+is\\s+(?:now\\s+)?available\\s+for\\s+trading",
+    re.IGNORECASE,
+)
 
 
 def _fetch_asset_listing_category_id(session) -> Optional[int]:
@@ -49,6 +52,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         title = (post.get("title") or {}).get("rendered", "") or ""
         title = unescape(title).strip()
         link = post.get("link", "")
+        content = (post.get("content") or {}).get("rendered", "") or ""
         date_gmt = post.get("date_gmt")
         if not title or not link or not date_gmt:
             continue
@@ -57,9 +61,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         )
         if published.timestamp() < cutoff:
             continue
-        tickers = extract_tickers(title)
+        content_text = re.sub(r"<.*?>", " ", content)
+        tickers = extract_tickers(f"{title} {content_text}")
         if not tickers:
-            match = _KRAKEN_AVAILABLE_RE.search(title)
+            match = _KRAKEN_AVAILABLE_RE.search(f"{title} {content_text}")
             if match:
                 tickers = [match.group(1).upper()]
         market_type = infer_market_type(title, default="spot")
