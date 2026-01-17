@@ -17,6 +17,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     page = 1
     last_page = None
     max_pages = 50
+    seen_ids: set[str] = set()
     total_items = 0
     type_counts: Dict[str, int] = {}
     while True:
@@ -40,6 +41,8 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if not items:
             break
         total_items += len(items)
+        page_new = 0
+        oldest_ts = None
         for idx, item in enumerate(items):
             item_type = item.get("type") or item.get("category") or ""
             if isinstance(item_type, list):
@@ -62,12 +65,19 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             if published_val > 10_000_000_000:
                 published_val = int(published_val / 1000)
             published = ensure_utc(datetime.fromtimestamp(published_val, tz=timezone.utc))
+            if oldest_ts is None or published_val < oldest_ts:
+                oldest_ts = published_val
             if published.timestamp() < cutoff:
                 continue
             title = item.get("title", "")
             body = item.get("summary", "") or item.get("content", "")
             url_value = item.get("url", "")
             tickers = extract_tickers(f"{title} {body}")
+            event_id = url_value or f"{published.isoformat()}:{title.strip()}"
+            if event_id in seen_ids:
+                continue
+            seen_ids.add(event_id)
+            page_new += 1
             announcements.append(
                 Announcement(
                     source_exchange="KuCoin",
@@ -82,6 +92,12 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             )
         if page >= max_pages:
             raise RuntimeError("safety stop: max_pages reached")
+        if oldest_ts is not None:
+            oldest_time = datetime.fromtimestamp(oldest_ts, tz=timezone.utc)
+            if oldest_time.timestamp() < cutoff:
+                break
+        if page_new == 0:
+            break
         page += 1
     if type_counts:
         LOGGER.info("KuCoin type distribution=%s", type_counts)

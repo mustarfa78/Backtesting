@@ -35,6 +35,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     selected_type = None
     selected_tag = None
     max_pages = 50
+    seen_ids: set[str] = set()
     while True:
         params = {"locale": "en-US", "limit": 50, "page": page}
         if selected_type:
@@ -98,6 +99,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 title,
                 tickers,
             )
+            event_id = url_value or f"{published.isoformat()}:{title.strip()}"
+            if event_id in seen_ids:
+                continue
+            seen_ids.add(event_id)
             announcements.append(
                 Announcement(
                     source_exchange="Bybit",

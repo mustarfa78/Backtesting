@@ -4,6 +4,7 @@ import argparse
 import csv
 import logging
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -109,6 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-file", type=str, default="run.log", help="Log file path")
     parser.add_argument("--resume", action="store_true", help="Resume from saved scan state")
     parser.add_argument("--reset-state", action="store_true", help="Ignore saved scan state")
+    parser.add_argument("--dry-run", action="store_true", help="Print sample announcements and exit")
     return parser.parse_args()
 
 
@@ -131,8 +133,7 @@ def fetch_all_announcements(session, days: int, seen_event_ids: set[str]) -> tup
             unique_items = []
             duplicates = 0
             for item in items:
-                event_id = item.url or f"{item.published_at_utc.isoformat()}:{item.title.strip()}"
-                event_id = f"{item.source_exchange}:{event_id}"
+                event_id = _event_id(item)
                 if event_id in seen_event_ids:
                     duplicates += 1
                     continue
@@ -194,6 +195,33 @@ def _setup_logging(log_file: str) -> None:
     root_logger.addHandler(console_handler)
 
 
+def _event_id(item: Announcement) -> str:
+    base = item.url or f"{item.published_at_utc.isoformat()}:{item.title.strip()}"
+    return f"{item.source_exchange}:{base}"
+
+
+def _load_state(path: str) -> tuple[set[str], set[tuple[str, int]]]:
+    if not os.path.exists(path):
+        return set(), set()
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return set(), set()
+    seen = set(data.get("seen_event_ids", []))
+    windows = set(tuple(item) for item in data.get("scanned_windows", []))
+    return seen, windows
+
+
+def _save_state(path: str, seen_event_ids: set[str], scanned_windows: set[tuple[str, int]]) -> None:
+    payload = {
+        "seen_event_ids": sorted(seen_event_ids),
+        "scanned_windows": [list(item) for item in sorted(scanned_windows)],
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+
 def main() -> None:
     args = parse_args()
     _setup_logging(args.log_file)
@@ -208,8 +236,13 @@ def main() -> None:
     adapter_stats = {}
     rows: List[Dict[str, str]] = []
     summary_lines: List[str] = []
+    state_path = "scan_state.json"
     seen_event_ids: set[str] = set()
     scanned_windows: set[tuple[str, int]] = set()
+    if args.reset_state and os.path.exists(state_path):
+        os.remove(state_path)
+    if args.resume:
+        seen_event_ids, scanned_windows = _load_state(state_path)
 
     while True:
         for name in ["Binance", "Bybit", "KuCoin", "XT", "Gate", "Kraken", "Bitget"]:
@@ -228,6 +261,17 @@ def main() -> None:
                         item.published_at_utc,
                         item.url,
                     )
+            return
+        if args.dry_run:
+            samples_by_source: Dict[str, int] = {}
+            for item in announcements:
+                if samples_by_source.get(item.source_exchange, 0) >= 5:
+                    continue
+                samples_by_source[item.source_exchange] = samples_by_source.get(item.source_exchange, 0) + 1
+                print(
+                    f"{item.source_exchange} | {item.published_at_utc.isoformat()} | {item.title} | "
+                    f"{item.url} | {_event_id(item)}"
+                )
             return
         if args.debug_ticker and args.debug_at:
             debug_time = parser.isoparse(args.debug_at).astimezone(timezone.utc)
@@ -485,6 +529,8 @@ def main() -> None:
                 summary_lines.append(
                     f"Target {args.target} not reached (rows={len(rows)}) within {days_window} days"
                 )
+            if args.resume:
+                _save_state(state_path, seen_event_ids, scanned_windows)
             break
         days_window = min(days_window * 2, max_days)
         summary_lines.append(f"Expanding days window to {days_window} to meet target {args.target}")
