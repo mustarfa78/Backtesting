@@ -17,7 +17,7 @@ from adapters import (
     fetch_kucoin,
     fetch_xt,
 )
-from adapters.common import Announcement, futures_keyword_match, is_futures_announcement
+from adapters.common import Announcement, futures_keyword_match
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
 from screening_utils import get_session
 from marketcap import resolve_market_cap
@@ -27,6 +27,61 @@ from micro_highs import compute_micro_highs
 
 LOGGER = logging.getLogger(__name__)
 
+LAUNCH_KEYWORDS = (
+    "will launch",
+    "launch",
+    "listed",
+    "list",
+    "introduce",
+    "add",
+    "open trading",
+    "pre-market trading",
+    "premarket trading",
+)
+
+FUTURES_KEYWORDS = (
+    "perpetual",
+    "futures",
+    "usdt-m",
+    "usdⓈ-m",
+    "contract",
+    "swap",
+)
+
+EXCLUDE_KEYWORDS = (
+    "funding rate",
+    "adjusting",
+    "adjustment",
+    "tick size",
+    "maintenance",
+    "system upgrade",
+    "replacement",
+    "migration",
+    "parameter",
+    "rules",
+    "risk limit",
+    "fee",
+    "delist",
+    "settlement",
+    "delivery",
+    "index",
+    "mark price",
+    "community",
+    "campaign",
+    "week",
+)
+
+
+def _passes_futures_intent(title: str) -> tuple[bool, List[str]]:
+    lowered = title.lower()
+    hits = [kw for kw in LAUNCH_KEYWORDS if kw in lowered]
+    futures_hits = [kw for kw in FUTURES_KEYWORDS if kw in lowered]
+    excluded = [kw for kw in EXCLUDE_KEYWORDS if kw in lowered]
+    if excluded:
+        return False, ["excluded:" + ",".join(excluded)]
+    if hits and futures_hits:
+        return True, hits + futures_hits
+    return False, hits + futures_hits
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build futures listing reaction dataset.")
@@ -151,14 +206,18 @@ def main() -> None:
     futures_filtered = []
     excluded_by_filter = 0
     keyword_hits: Dict[str, int] = {}
+    excluded_reasons: Dict[str, int] = {}
 
     for announcement in announcements:
         if args.no_futures_filter:
             futures_filtered.append(announcement)
             continue
         match = futures_keyword_match(announcement.title)
-        if not match:
+        allowed, reasons = _passes_futures_intent(announcement.title)
+        if not match or not allowed:
             excluded_by_filter += 1
+            reason_key = ";".join(reasons) if reasons else "no_match"
+            excluded_reasons[reason_key] = excluded_reasons.get(reason_key, 0) + 1
             continue
         keyword_hits[match] = keyword_hits.get(match, 0) + 1
         futures_filtered.append(announcement)
@@ -166,6 +225,8 @@ def main() -> None:
     LOGGER.info("after futures filter=%s excluded=%s", len(futures_filtered), excluded_by_filter)
     if keyword_hits:
         LOGGER.info("futures keyword hits=%s", keyword_hits)
+    if excluded_reasons:
+        LOGGER.info("futures exclusion reasons=%s", excluded_reasons)
     LOGGER.info("after sort=%s", len(futures_filtered))
     for idx, announcement in enumerate(futures_filtered[:10]):
         LOGGER.info(

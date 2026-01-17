@@ -30,6 +30,7 @@ class ContractInfo:
 class MexcFuturesClient:
     def __init__(self, session):
         self.session = session
+        self._use_ms: Optional[bool] = None
 
     def list_contracts(self) -> List[ContractInfo]:
         data = get_json(self.session, CONTRACT_DETAIL_URL)
@@ -87,7 +88,7 @@ class MexcFuturesClient:
         start_time = start_time.replace(second=0, microsecond=0, tzinfo=timezone.utc)
         end_time = end_time.replace(second=0, microsecond=0, tzinfo=timezone.utc)
         url = f"{BASE_URL}/api/v1/contract/kline/{symbol}"
-        for use_ms in (True, False):
+        for use_ms in self._time_units_to_try():
             start_ts = int(start_time.timestamp() * (1000 if use_ms else 1))
             end_ts = int(end_time.timestamp() * (1000 if use_ms else 1))
             params = {"interval": interval, "start": start_ts, "end": end_ts}
@@ -112,9 +113,15 @@ class MexcFuturesClient:
             data = response.json()
             candles = self._parse_kline_payload(data)
             if candles:
+                self._use_ms = use_ms
                 return candles
             LOGGER.info("MEXC kline empty keys=%s use_ms=%s", list(data.keys()), use_ms)
         return []
+
+    def _time_units_to_try(self) -> List[bool]:
+        if self._use_ms is None:
+            return [False, True]
+        return [self._use_ms]
 
     def _parse_kline_payload(self, data: dict) -> List[Candle]:
         candles: List[Candle] = []
