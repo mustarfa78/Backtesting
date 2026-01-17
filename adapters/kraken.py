@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from html import unescape
+import re
 from typing import List, Optional
 
 import logging
@@ -10,6 +11,8 @@ from adapters.common import Announcement, extract_tickers, guess_listing_type, i
 from http_client import get_json
 
 LOGGER = logging.getLogger(__name__)
+
+_KRAKEN_AVAILABLE_RE = re.compile(r"\\b([A-Z0-9]{2,10})\\b\\s+is\\s+available\\s+for\\s+trading", re.IGNORECASE)
 
 
 def _fetch_asset_listing_category_id(session) -> Optional[int]:
@@ -55,6 +58,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if published.timestamp() < cutoff:
             continue
         tickers = extract_tickers(title)
+        if not tickers:
+            match = _KRAKEN_AVAILABLE_RE.search(title)
+            if match:
+                tickers = [match.group(1).upper()]
         market_type = infer_market_type(title, default="spot")
         if len(titles_sample) < 10:
             titles_sample.append(title)

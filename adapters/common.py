@@ -38,6 +38,7 @@ SPOT_LISTING_KEYWORDS = (
     "listing",
     "spot trading",
     "available to trade",
+    "available for trading",
     "trade starts",
     "adds",
     "new listing",
