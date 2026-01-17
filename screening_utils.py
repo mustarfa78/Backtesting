@@ -256,6 +256,10 @@ if __name__ == "__main__":
             title = "Adjusting ... for MEUSDT Perpetual Contracts"
             self.assertEqual(extract_tickers(title), ["ME"])
 
+        def test_extract_bitget_pair(self):
+            title = "FUNUSDT now launched for futures trading and trading bots"
+            self.assertEqual(extract_tickers(title), ["FUN"])
+
     unittest.main()
 
 

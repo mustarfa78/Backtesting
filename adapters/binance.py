@@ -53,7 +53,12 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     try:
         response = session.get(url, params=params, headers=headers, timeout=20)
-        LOGGER.info("Binance request url=%s params=%s", url, params)
+        LOGGER.info(
+            "Binance request url=%s params=%s cache=%s",
+            url,
+            params,
+            getattr(response, "from_cache", False),
+        )
         if response.status_code in (403, 451) or response.status_code >= 500:
             LOGGER.warning("Binance response status=%s blocked_or_error", response.status_code)
         LOGGER.info(

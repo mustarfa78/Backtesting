@@ -28,7 +28,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     items = data.get("data", [])
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    for item in items:
+    for idx, item in enumerate(items):
         timestamp = item.get("annTime") or item.get("cTime")
         if timestamp is None:
             continue
@@ -39,6 +39,14 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         body = item.get("content", "") or item.get("summary", "")
         url = item.get("url", "")
         tickers = extract_tickers(f"{title} {body}")
+        if idx < 10:
+            LOGGER.info(
+                "Bitget sample title=%s annType=%s annSubType=%s tickers=%s",
+                title,
+                item.get("annType"),
+                item.get("annSubType"),
+                tickers,
+            )
         announcements.append(
             Announcement(
                 source_exchange="Bitget",

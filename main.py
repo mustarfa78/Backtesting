@@ -27,7 +27,6 @@ from micro_highs import compute_micro_highs
 
 
 LOGGER = logging.getLogger(__name__)
-SUMMARY_LOGGER = logging.getLogger("summary")
 
 LAUNCH_KEYWORDS = (
     "will launch",
@@ -107,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
     parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
     parser.add_argument("--debug-window-min", type=int, default=60, help="Minutes for debug kline window")
-    parser.add_argument("--log-file", type=str, default="logs/run.log", help="Log file path")
+    parser.add_argument("--log-file", type=str, default="run.log", help="Log file path")
     return parser.parse_args()
 
 
@@ -169,12 +168,10 @@ def _setup_logging(log_file: str) -> None:
     )
     root_logger.addHandler(file_handler)
 
-    summary_handler = logging.StreamHandler()
-    summary_handler.setLevel(logging.INFO)
-    summary_handler.setFormatter(logging.Formatter("%(message)s"))
-    SUMMARY_LOGGER.setLevel(logging.INFO)
-    SUMMARY_LOGGER.addHandler(summary_handler)
-    SUMMARY_LOGGER.propagate = False
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.ERROR)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(console_handler)
 
 
 def main() -> None:
@@ -190,6 +187,7 @@ def main() -> None:
     announcements: List[Announcement] = []
     adapter_stats = {}
     rows: List[Dict[str, str]] = []
+    summary_lines: List[str] = []
 
     while True:
         announcements, adapter_stats = fetch_all_announcements(session, days_window)
@@ -417,18 +415,14 @@ def main() -> None:
             candle_ok,
             qualified,
         )
-        SUMMARY_LOGGER.info(
-            "candidates checked=%s mapped=%s candle_ok=%s qualified=%s",
-            candidates_checked,
-            mapped,
-            candle_ok,
-            qualified,
-        )
-        SUMMARY_LOGGER.info("per_source filtered=%s", per_source_filtered)
-        SUMMARY_LOGGER.info("per_source tickers_extracted=%s", per_source_tickers)
-        SUMMARY_LOGGER.info("per_source mexc_mapped_ok=%s", per_source_mapped)
-        SUMMARY_LOGGER.info("per_source mexc_candle_ok=%s", per_source_candle_ok)
-        SUMMARY_LOGGER.info("per_source final_rows=%s", per_source_rows)
+        summary_lines = [
+            f"candidates checked={candidates_checked} mapped={mapped} candle_ok={candle_ok} qualified={qualified}",
+            f"per_source filtered={per_source_filtered}",
+            f"per_source tickers_extracted={per_source_tickers}",
+            f"per_source mexc_mapped_ok={per_source_mapped}",
+            f"per_source mexc_candle_ok={per_source_candle_ok}",
+            f"per_source final_rows={per_source_rows}",
+        ]
         for name in adapter_stats.get("counts", {}):
             if per_source_rows.get(name, 0) > 0:
                 continue
@@ -444,18 +438,15 @@ def main() -> None:
                 reason = "0 passed MEXC candle check"
             else:
                 reason = "0 rows after processing"
-            SUMMARY_LOGGER.warning("adapter=%s zero rows reason=%s", name, reason)
+            summary_lines.append(f"adapter={name} zero rows reason={reason}")
         if rows or days_window >= max_days:
             if len(rows) < args.target:
-                SUMMARY_LOGGER.warning(
-                    "Target %s not reached (rows=%s) within %s days",
-                    args.target,
-                    len(rows),
-                    days_window,
+                summary_lines.append(
+                    f"Target {args.target} not reached (rows={len(rows)}) within {days_window} days"
                 )
             break
         days_window = min(days_window * 2, max_days)
-        SUMMARY_LOGGER.warning("Expanding days window to %s to meet target %s", days_window, args.target)
+        summary_lines.append(f"Expanding days window to {days_window} to meet target {args.target}")
 
     fieldnames = [
         "source_exchange",
@@ -483,8 +474,9 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    SUMMARY_LOGGER.info("rows_written=%s", len(rows))
-    SUMMARY_LOGGER.info("Wrote %s rows to %s", len(rows), args.out)
+    summary_lines.append(f"rows_written={len(rows)}")
+    summary_lines.append(f"Wrote {len(rows)} rows to {args.out}")
+    print("\n".join(summary_lines))
 
 
 if __name__ == "__main__":

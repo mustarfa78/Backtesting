@@ -14,11 +14,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    url = "https://www.gate.tv/announcements/newlisted"
+    url = "https://www.gate.io/announcements/newlisted"
     response = session.get(url, timeout=20)
     LOGGER.info("Gate request url=%s", url)
     if response.status_code in (403, 451) or response.status_code >= 500:
         LOGGER.warning("Gate response status=%s blocked_or_error", response.status_code)
+        url = "https://www.gate.tv/announcements/newlisted"
+        response = session.get(url, timeout=20)
+        LOGGER.info("Gate fallback url=%s status=%s", url, response.status_code)
     LOGGER.info(
         "Gate response status=%s content_type=%s body_preview=%s",
         response.status_code,
@@ -30,14 +33,14 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     soup = BeautifulSoup(html, "lxml")
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    items = list(soup.select("a.announcement-item, a.article-item, a.notice-item"))
+    items = list(soup.select("a.announcement-item, a.article-item, a.notice-item, a.notice-list-item"))
     LOGGER.info("Gate candidate nodes=%s", len(items))
     for item in items:
         title = item.get_text(strip=True)
         href = item.get("href", "")
         if not href:
             continue
-        full_url = href if href.startswith("http") else f"https://www.gate.tv{href}"
+        full_url = href if href.startswith("http") else f"https://www.gate.io{href}"
         time_el = item.find("time")
         published = None
         if time_el and time_el.get("datetime"):
@@ -76,6 +79,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 .get("notice", {})
                 .get("list", [])
             )
+            LOGGER.info("Gate __NEXT_DATA__ articles=%s", len(articles))
             for item in articles:
                 title = item.get("title", "")
                 href = item.get("url", "")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List
+from typing import Dict, List
 
 import logging
 
@@ -35,7 +35,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if not items:
             break
         total_items += len(items)
-        for item in items:
+        for idx, item in enumerate(items):
             item_type = item.get("type") or item.get("category") or ""
             if isinstance(item_type, list):
                 item_type_key = ",".join(str(x) for x in item_type)
@@ -43,10 +43,20 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 item_type_key = str(item_type)
             if item_type_key:
                 type_counts[item_type_key] = type_counts.get(item_type_key, 0) + 1
+            if idx < 3:
+                LOGGER.info(
+                    "KuCoin sample title=%s type=%s publishAt=%s",
+                    item.get("title"),
+                    item_type,
+                    item.get("publishAt") or item.get("createdAt"),
+                )
             published_at = item.get("publishAt") or item.get("createdAt")
             if published_at is None:
                 continue
-            published = ensure_utc(datetime.fromtimestamp(int(published_at) / 1000, tz=timezone.utc))
+            published_val = int(published_at)
+            if published_val > 10_000_000_000:
+                published_val = int(published_val / 1000)
+            published = ensure_utc(datetime.fromtimestamp(published_val, tz=timezone.utc))
             if published.timestamp() < cutoff:
                 continue
             title = item.get("title", "")
