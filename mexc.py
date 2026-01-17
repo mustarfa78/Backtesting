@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from http_client import get_json
@@ -10,6 +10,7 @@ from http_client import get_json
 
 LOGGER = logging.getLogger(__name__)
 BASE_URL = "https://contract.mexc.com"
+CONTRACT_DETAIL_URL = f"{BASE_URL}/api/v1/contract/detail"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,8 @@ class Candle:
 class ContractInfo:
     symbol: str
     base_asset: str
+    quote_asset: str
+    contract_type: str
 
 
 class MexcFuturesClient:
@@ -29,22 +32,49 @@ class MexcFuturesClient:
         self.session = session
 
     def list_contracts(self) -> List[ContractInfo]:
-        url = f"{BASE_URL}/api/v1/contract/ticker"
-        data = get_json(self.session, url)
+        data = get_json(self.session, CONTRACT_DETAIL_URL)
+        items = data.get("data") or []
+        if isinstance(items, dict):
+            items = items.get("list") or items.get("items") or []
+        if not isinstance(items, list):
+            items = []
         contracts = []
-        for item in data.get("data", []):
-            symbol = item.get("symbol")
-            if not symbol:
+        for item in items:
+            if not isinstance(item, dict):
                 continue
-            base_asset = symbol.split("_")[0]
-            contracts.append(ContractInfo(symbol=symbol, base_asset=base_asset))
+            symbol = str(item.get("symbol") or item.get("contractCode") or "").upper()
+            base_asset = str(item.get("baseCoin") or item.get("base") or "").upper()
+            quote_asset = str(item.get("quoteCoin") or item.get("quote") or "").upper()
+            contract_type = str(item.get("contractType") or item.get("type") or "").lower()
+            status = item.get("status")
+            if isinstance(status, str) and status.lower() in ("offline", "disabled", "suspend"):
+                continue
+            if not symbol or not base_asset:
+                continue
+            contracts.append(
+                ContractInfo(
+                    symbol=symbol,
+                    base_asset=base_asset,
+                    quote_asset=quote_asset,
+                    contract_type=contract_type,
+                )
+            )
         return contracts
 
-    def map_ticker_to_symbol(self, ticker: str, contracts: Iterable[ContractInfo]) -> Optional[str]:
-        for contract in contracts:
-            if contract.base_asset.upper() == ticker.upper():
-                return contract.symbol
-        return None
+    def map_ticker_to_symbols(self, ticker: str, contracts: Iterable[ContractInfo]) -> List[str]:
+        matches = [
+            contract
+            for contract in contracts
+            if contract.base_asset.upper() == ticker.upper()
+        ]
+        if not matches:
+            return []
+        def _priority(contract: ContractInfo) -> Tuple[int, str]:
+            is_usdt = 0 if "USDT" in contract.symbol or contract.quote_asset == "USDT" else 1
+            is_perp = 0 if "perp" in contract.contract_type else 1
+            return (is_usdt, is_perp, contract.symbol)
+        matches.sort(key=_priority)
+        return [contract.symbol for contract in matches]
 
     def fetch_klines(
         self,
@@ -52,14 +82,35 @@ class MexcFuturesClient:
         start_time: datetime,
         end_time: datetime,
         interval: str = "Min1",
+        limit: Optional[int] = None,
     ) -> List[Candle]:
-        start_ts = int(start_time.replace(tzinfo=timezone.utc).timestamp())
-        end_ts = int(end_time.replace(tzinfo=timezone.utc).timestamp())
+        start_ts_ms = int(start_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
+        end_ts_ms = int(end_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
         url = f"{BASE_URL}/api/v1/contract/kline/{symbol}"
-        params = {"interval": interval, "start": start_ts, "end": end_ts}
-        data = get_json(self.session, url, params=params)
+        params = {"interval": interval, "start": start_ts_ms, "end": end_ts_ms}
+        if limit:
+            params["limit"] = limit
+        LOGGER.info(
+            "MEXC kline request url=%s params=%s start_ms=%s end_ms=%s",
+            url,
+            params,
+            start_ts_ms,
+            end_ts_ms,
+        )
+        response = self.session.get(url, params=params, timeout=20)
+        body_preview = response.text[:300] if response.text else ""
+        LOGGER.info(
+            "MEXC kline response status=%s body_preview=%s",
+            response.status_code,
+            body_preview,
+        )
+        response.raise_for_status()
+        data = response.json()
         candles = []
-        for item in data.get("data", []):
+        payload = data.get("data", [])
+        if not payload:
+            LOGGER.info("MEXC kline response keys=%s", list(data.keys()))
+        for item in payload:
             try:
                 ts = datetime.fromtimestamp(int(item[0]) / 1000, tz=timezone.utc)
                 close = float(item[4])
@@ -70,8 +121,11 @@ class MexcFuturesClient:
         return candles
 
     def has_candle_covering(self, candles: List[Candle], target: datetime) -> bool:
-        target = target.replace(tzinfo=timezone.utc)
-        return any(c.timestamp == target for c in candles)
+        target = target.replace(second=0, microsecond=0, tzinfo=timezone.utc)
+        for candle in candles:
+            if candle.timestamp.replace(second=0, microsecond=0) == target:
+                return True
+        return False
 
     def get_close_at(self, candles: List[Candle], target: datetime) -> Optional[float]:
         for candle in candles:
@@ -80,13 +134,19 @@ class MexcFuturesClient:
         return None
 
     def ensure_trading(self, symbol: str, at_time: datetime) -> Tuple[bool, List[Candle]]:
-        start_time = at_time.replace(tzinfo=timezone.utc) - timedelta(minutes=10)
-        end_time = at_time.replace(tzinfo=timezone.utc)
+        at_time = at_time.astimezone(timezone.utc)
+        target = at_time.replace(second=0, microsecond=0) - timedelta(minutes=1)
+        start_time = at_time - timedelta(minutes=10)
+        end_time = at_time + timedelta(minutes=2)
         candles = self.fetch_klines(symbol, start_time=start_time, end_time=end_time)
-        exists = self.has_candle_covering(candles, at_time.replace(second=0, microsecond=0) - timedelta(minutes=1))
+        exists = self.has_candle_covering(candles, target)
         if not exists:
-            LOGGER.info("No candle for %s at %s", symbol, at_time)
+            LOGGER.info("No candle for %s at %s", symbol, target.isoformat())
         return exists, candles
 
-
-from datetime import timedelta  # noqa: E402
+    def check_symbol_live_now(self, symbol: str) -> bool:
+        now = datetime.now(timezone.utc)
+        start_time = now - timedelta(minutes=30)
+        end_time = now
+        candles = self.fetch_klines(symbol, start_time=start_time, end_time=end_time)
+        return bool(candles)

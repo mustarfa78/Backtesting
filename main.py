@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
+from dateutil import parser
+
 from adapters import (
     fetch_binance,
     fetch_bitget,
@@ -17,7 +19,7 @@ from adapters import (
 )
 from adapters.common import Announcement, is_futures_announcement
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
-from screening_utils import get_session, mexc_symbols_for
+from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
@@ -31,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target", type=int, default=DEFAULT_TARGET, help="Number of rows to collect")
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="Lookback window in days")
     parser.add_argument("--out", type=str, default="events.csv", help="Output CSV path")
+    parser.add_argument("--debug-ticker", type=str, default="", help="Ticker to debug mapping/klines")
+    parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
     return parser.parse_args()
 
 
@@ -76,6 +80,20 @@ def main() -> None:
     session = get_session()
     announcements = fetch_all_announcements(session, args.days)
     mexc = MexcFuturesClient(session)
+    contracts = mexc.list_contracts()
+
+    if args.debug_ticker and args.debug_at:
+        debug_time = parser.isoparse(args.debug_at).astimezone(timezone.utc)
+        debug_ticker = args.debug_ticker.upper()
+        symbols = mexc.map_ticker_to_symbols(debug_ticker, contracts)
+        LOGGER.info("Debug ticker=%s symbols=%s", debug_ticker, symbols)
+        for symbol in symbols:
+            try:
+                exists, candles = mexc.ensure_trading(symbol, debug_time)
+                LOGGER.info("Symbol %s candle_exists=%s sample=%s", symbol, exists, candles[:5])
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Debug failed for %s: %s", symbol, exc)
+        return
 
     rows: List[Dict[str, str]] = []
     seen = set()
@@ -91,8 +109,9 @@ def main() -> None:
                 continue
             seen.add(key)
 
-            symbols = mexc_symbols_for(ticker, session)
+            symbols = mexc.map_ticker_to_symbols(ticker, contracts)
             if not symbols:
+                LOGGER.info("No MEXC symbol mapping for %s", ticker)
                 continue
             at_time = announcement.published_at_utc.replace(second=0, microsecond=0)
             symbol = None
@@ -109,6 +128,11 @@ def main() -> None:
                         at_time.isoformat(),
                         candidate_symbol,
                     )
+                    try:
+                        exists_now = mexc.check_symbol_live_now(candidate_symbol)
+                        LOGGER.info("Symbol %s live_now=%s", candidate_symbol, exists_now)
+                    except Exception as exc:  # noqa: BLE001
+                        LOGGER.warning("Live-now check failed for %s: %s", candidate_symbol, exc)
                     continue
                 symbol = candidate_symbol
                 break
