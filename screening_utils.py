@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -133,6 +134,8 @@ SEEN: Dict[str, Set[str]] = {
     "MEXC": set(),
 }
 
+LOGGER = logging.getLogger(__name__)
+
 _bin_fut_lock = threading.Lock()
 _bin_fut_loaded_at = 0
 _bin_base_to_quotes: Dict[str, Set[str]] = {}
@@ -140,6 +143,10 @@ _bin_base_to_quotes: Dict[str, Set[str]] = {}
 _mexc_fut_lock = threading.Lock()
 _mexc_fut_loaded_at = 0
 _mexc_base_to_symbols: Dict[str, Set[str]] = {}
+
+_extract_log_lock = threading.Lock()
+_extract_log_count = 0
+_EXTRACT_LOG_LIMIT = 10
 
 
 def get_session() -> requests.Session:
@@ -190,33 +197,31 @@ def mark_seen(source: str, uniq: str) -> bool:
 
 
 def extract_tickers(text: str) -> List[str]:
-    safe_text = re.sub(r"[^A-Za-z/\\-\\s\\(\\)]", "", text)
-    upper = safe_text.upper()
+    upper = text.upper()
+    pair_pattern = re.compile(r"([A-Z0-9]{2,15})\\s*[-_/]?\\s*(USDT|USDC|USD|BTC|ETH|BNB)")
+    matches = pair_pattern.findall(upper)
 
-    bracket_matches = re.findall(r"\\(([A-Z]{2,15})\\)", upper)
-    pair_matches = re.findall(r"\\b([A-Z]{2,12})\\s*/\\s*([A-Z]{2,6})\\b", upper)
-    dash_matches = re.findall(r"\\b([A-Z]{2,12})-([A-Z]{2,6})\\b", upper)
-    concat_matches = re.findall(r"\\b([A-Z]{2,12})(USDT|USDC|USD|BTC|ETH|BNB)\\b", upper)
+    bases: Set[str] = set()
+    for base, quote in matches:
+        if quote in PAIR_QUOTES and base:
+            bases.add(base)
 
-    expanded: Set[str] = set()
-    for raw in bracket_matches:
-        t = raw.strip().upper()
-        if t:
-            expanded.add(t)
+    filtered = [base for base in bases if base not in IGNORE_WORDS]
+    result = sorted(set(filtered))
 
-    for base, quote in pair_matches + dash_matches:
-        if quote in PAIR_QUOTES:
-            expanded.add(base)
-    for base, _quote in concat_matches:
-        expanded.add(base)
+    global _extract_log_count
+    with _extract_log_lock:
+        if _extract_log_count < _EXTRACT_LOG_LIMIT:
+            LOGGER.info(
+                "extract_tickers raw=%s upper=%s matches=%s result=%s",
+                text,
+                upper,
+                matches,
+                result,
+            )
+            _extract_log_count += 1
 
-    out = []
-    for t in expanded:
-        if t in IGNORE_WORDS:
-            continue
-        out.append(t)
-
-    return sorted(list(set(out)))
+    return result
 
 
 def _refresh_binance_futures_cache(session):
