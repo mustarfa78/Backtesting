@@ -96,6 +96,27 @@ IGNORE_WORDS = {
     "ITS",
     "AS",
     "ONCHAIN",
+    "COM",
+    "COMPLETION",
+    "CHANGES",
+    "UPDATE",
+    "UPDATED",
+    "UPDATES",
+    "NOTICE",
+    "ANNOUNCED",
+    "ANNOUNCE",
+    "PLEASE",
+    "READ",
+    "ONLY",
+    "NOW",
+    "LIVE",
+    "AVAILABLE",
+    "OPENED",
+    "OPENED",
+    "LISTED",
+    "WALLET",
+    "DEPOSIT",
+    "WITHDRAWAL",
 }
 
 SEEN_LOCK = threading.Lock()
@@ -169,26 +190,19 @@ def mark_seen(source: str, uniq: str) -> bool:
 
 
 def extract_tickers(text: str) -> List[str]:
-    safe_text = re.sub(r"[^A-Za-z/\-\s\(\)]", "", text)
+    safe_text = re.sub(r"[^A-Za-z/\\-\\s\\(\\)]", "", text)
+    upper = safe_text.upper()
 
-    bracket_matches = re.findall(r"\(([A-Z]{2,15})\)", safe_text.upper())
-    loose_matches = re.findall(r"\b[A-Z]{2,12}\b", safe_text.upper())
-
-    pair_matches = re.findall(r"\b([A-Z]{2,12})\s*/\s*([A-Z]{2,6})\b", safe_text.upper())
-    dash_matches = re.findall(r"\b([A-Z]{2,12})-([A-Z]{2,6})\b", safe_text.upper())
-    concat_matches = re.findall(r"\b([A-Z]{2,12})(USDT|USDC|USD|BTC|ETH|BNB)\b", safe_text.upper())
-
-    all_potential = bracket_matches + loose_matches
+    bracket_matches = re.findall(r"\\(([A-Z]{2,15})\\)", upper)
+    pair_matches = re.findall(r"\\b([A-Z]{2,12})\\s*/\\s*([A-Z]{2,6})\\b", upper)
+    dash_matches = re.findall(r"\\b([A-Z]{2,12})-([A-Z]{2,6})\\b", upper)
+    concat_matches = re.findall(r"\\b([A-Z]{2,12})(USDT|USDC|USD|BTC|ETH|BNB)\\b", upper)
 
     expanded: Set[str] = set()
-    for raw in all_potential:
+    for raw in bracket_matches:
         t = raw.strip().upper()
-        if not t:
-            continue
-        for q in PAIR_QUOTES:
-            if t.endswith(q) and len(t) > len(q) + 1:
-                expanded.add(t[: -len(q)])
-        expanded.add(t)
+        if t:
+            expanded.add(t)
 
     for base, quote in pair_matches + dash_matches:
         if quote in PAIR_QUOTES:

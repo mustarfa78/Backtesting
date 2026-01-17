@@ -84,40 +84,68 @@ class MexcFuturesClient:
         interval: str = "Min1",
         limit: Optional[int] = None,
     ) -> List[Candle]:
-        start_ts_ms = int(start_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
-        end_ts_ms = int(end_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
+        start_time = start_time.replace(second=0, microsecond=0, tzinfo=timezone.utc)
+        end_time = end_time.replace(second=0, microsecond=0, tzinfo=timezone.utc)
         url = f"{BASE_URL}/api/v1/contract/kline/{symbol}"
-        params = {"interval": interval, "start": start_ts_ms, "end": end_ts_ms}
-        if limit:
-            params["limit"] = limit
-        LOGGER.info(
-            "MEXC kline request url=%s params=%s start_ms=%s end_ms=%s",
-            url,
-            params,
-            start_ts_ms,
-            end_ts_ms,
-        )
-        response = self.session.get(url, params=params, timeout=20)
-        body_preview = response.text[:300] if response.text else ""
-        LOGGER.info(
-            "MEXC kline response status=%s body_preview=%s",
-            response.status_code,
-            body_preview,
-        )
-        response.raise_for_status()
-        data = response.json()
-        candles = []
+        for use_ms in (True, False):
+            start_ts = int(start_time.timestamp() * (1000 if use_ms else 1))
+            end_ts = int(end_time.timestamp() * (1000 if use_ms else 1))
+            params = {"interval": interval, "start": start_ts, "end": end_ts}
+            if limit:
+                params["limit"] = limit
+            LOGGER.info(
+                "MEXC kline request url=%s params=%s start=%s end=%s use_ms=%s",
+                url,
+                params,
+                start_ts,
+                end_ts,
+                use_ms,
+            )
+            response = self.session.get(url, params=params, timeout=20)
+            body_preview = response.text[:300] if response.text else ""
+            LOGGER.info(
+                "MEXC kline response status=%s body_preview=%s",
+                response.status_code,
+                body_preview,
+            )
+            response.raise_for_status()
+            data = response.json()
+            candles = self._parse_kline_payload(data)
+            if candles:
+                return candles
+            LOGGER.info("MEXC kline empty keys=%s use_ms=%s", list(data.keys()), use_ms)
+        return []
+
+    def _parse_kline_payload(self, data: dict) -> List[Candle]:
+        candles: List[Candle] = []
         payload = data.get("data", [])
-        if not payload:
-            LOGGER.info("MEXC kline response keys=%s", list(data.keys()))
-        for item in payload:
-            try:
-                ts = datetime.fromtimestamp(int(item[0]) / 1000, tz=timezone.utc)
-                close = float(item[4])
-            except (IndexError, ValueError, TypeError):
-                continue
-            candles.append(Candle(timestamp=ts, close=close))
-        candles.sort(key=lambda c: c.timestamp)
+        if isinstance(payload, dict):
+            times = payload.get("time") or []
+            closes = payload.get("close") or []
+            for idx, ts in enumerate(times):
+                try:
+                    close = float(closes[idx])
+                    ts_val = int(ts)
+                    if ts_val < 10_000_000_000:
+                        ts_val *= 1000
+                    candle_time = datetime.fromtimestamp(ts_val / 1000, tz=timezone.utc)
+                except (IndexError, ValueError, TypeError):
+                    continue
+                candles.append(Candle(timestamp=candle_time, close=close))
+            candles.sort(key=lambda c: c.timestamp)
+            return candles
+        if isinstance(payload, list):
+            for item in payload:
+                try:
+                    ts = int(item[0])
+                    if ts < 10_000_000_000:
+                        ts *= 1000
+                    candle_time = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                    close = float(item[4])
+                except (IndexError, ValueError, TypeError):
+                    continue
+                candles.append(Candle(timestamp=candle_time, close=close))
+            candles.sort(key=lambda c: c.timestamp)
         return candles
 
     def has_candle_covering(self, candles: List[Candle], target: datetime) -> bool:
@@ -150,3 +178,19 @@ class MexcFuturesClient:
         end_time = now
         candles = self.fetch_klines(symbol, start_time=start_time, end_time=end_time)
         return bool(candles)
+
+    def probe_first_contracts(self, contracts: List[ContractInfo]) -> None:
+        for contract in contracts[:2]:
+            try:
+                candles = self.fetch_klines(
+                    contract.symbol,
+                    start_time=datetime.now(timezone.utc) - timedelta(minutes=30),
+                    end_time=datetime.now(timezone.utc),
+                )
+                LOGGER.info(
+                    "Probe contract %s candles=%s",
+                    contract.symbol,
+                    len(candles),
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Probe failed for %s: %s", contract.symbol, exc)

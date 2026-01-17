@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=str, default="events.csv", help="Output CSV path")
     parser.add_argument("--debug-ticker", type=str, default="", help="Ticker to debug mapping/klines")
     parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
+    parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
+    parser.add_argument("--debug-window-min", type=int, default=60, help="Minutes for debug kline window")
     return parser.parse_args()
 
 
@@ -93,6 +95,28 @@ def main() -> None:
                 LOGGER.info("Symbol %s candle_exists=%s sample=%s", symbol, exists, candles[:5])
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("Debug failed for %s: %s", symbol, exc)
+        return
+    if args.debug_mexc_symbol:
+        debug_ticker = args.debug_mexc_symbol.upper()
+        symbols = mexc.map_ticker_to_symbols(debug_ticker, contracts)
+        LOGGER.info("Debug MEXC ticker=%s symbols=%s", debug_ticker, symbols)
+        window_end = datetime.now(timezone.utc)
+        window_start = window_end - timedelta(minutes=args.debug_window_min)
+        for symbol in symbols:
+            try:
+                candles = mexc.fetch_klines(symbol, window_start, window_end)
+                sample_times = [c.timestamp.isoformat() for c in candles[:3]]
+                LOGGER.info(
+                    "Symbol %s candle_count=%s sample_times=%s",
+                    symbol,
+                    len(candles),
+                    sample_times,
+                )
+                if candles:
+                    break
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Debug kline failed for %s: %s", symbol, exc)
+        mexc.probe_first_contracts(contracts)
         return
 
     rows: List[Dict[str, str]] = []
