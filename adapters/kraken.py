@@ -16,6 +16,10 @@ _KRAKEN_AVAILABLE_RE = re.compile(
     r"^\\s*([A-Z0-9]{2,15})\\s+is\\s+(?:now\\s+)?available\\s+for\\s+trading!?",
     re.IGNORECASE,
 )
+_KRAKEN_TRADING_STARTS_RE = re.compile(
+    r"trading\\s+starts\\s+for\\s+([A-Z0-9]{2,15})",
+    re.IGNORECASE,
+)
 
 
 def _fetch_asset_listing_category_id(session) -> Optional[int]:
@@ -65,6 +69,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         tickers = extract_tickers(f"{title} {content_text}")
         if not tickers:
             match = _KRAKEN_AVAILABLE_RE.search(title)
+            if match:
+                tickers = [match.group(1).upper()]
+        if not tickers:
+            match = _KRAKEN_TRADING_STARTS_RE.search(title)
             if match:
                 tickers = [match.group(1).upper()]
         market_type = infer_market_type(title, default="spot")

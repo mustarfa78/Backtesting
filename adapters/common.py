@@ -35,10 +35,13 @@ FUTURES_KEYWORDS = (
 
 SPOT_LISTING_KEYWORDS = (
     "will list",
+    "listed",
     "listing",
     "spot trading",
     "available to trade",
     "available for trading",
+    "trading begins",
+    "opens trading",
     "trade starts",
     "adds",
     "new listing",
