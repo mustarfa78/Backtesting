@@ -53,6 +53,8 @@ def guess_listing_type(title: str) -> str:
         return "innovation"
     if "futures" in lowered or "contract" in lowered or "swap" in lowered:
         return "futures"
+    if spot_keyword_match(lowered):
+        return "spot"
     return "unknown"
 
 

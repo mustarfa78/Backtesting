@@ -2,48 +2,32 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import List
-from xml.etree import ElementTree
 
 import logging
 
-from dateutil import parser
-
-from adapters.common import Announcement, extract_tickers, guess_listing_type, infer_market_type, parse_datetime
-from http_client import get_text
+from adapters.common import Announcement, extract_tickers, guess_listing_type, infer_market_type
+from http_client import get_json
 
 LOGGER = logging.getLogger(__name__)
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    LOGGER.info("Kraken adapter using RSS feed for asset listings (spot)")
-    feed_url = "https://blog.kraken.com/category/asset-listings/feed/"
-    try:
-        xml_text = get_text(session, feed_url)
-    except Exception as exc:  # noqa: BLE001
-        LOGGER.warning("Kraken RSS fetch failed: %s", exc)
-        return []
+    LOGGER.info("Kraken adapter using WP JSON feed for asset listings (spot)")
+    feed_url = "https://blog.kraken.com/wp-json/wp/v2/posts"
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     try:
-        root = ElementTree.fromstring(xml_text)
-    except ElementTree.ParseError as exc:
-        LOGGER.warning("Kraken RSS parse failed: %s", exc)
-        return []
-    for item in root.findall(".//item"):
-        title = item.findtext("title", default="").strip()
-        link = item.findtext("link", default="").strip()
-        pub_date = item.findtext("pubDate", default="").strip()
-        if not title or not link or not pub_date:
+        posts = get_json(session, feed_url, params={"per_page": 20})
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Kraken WP JSON fetch failed: %s", exc)
+        return announcements
+    for post in posts or []:
+        title = (post.get("title") or {}).get("rendered", "") or ""
+        link = post.get("link", "")
+        date_gmt = post.get("date_gmt")
+        if not title or not link or not date_gmt:
             continue
-        published = parse_datetime(pub_date)
-        if not published:
-            try:
-                published = parser.parse(pub_date)
-            except (ValueError, TypeError):
-                published = None
-        if not published:
-            continue
-        published = published.astimezone(timezone.utc)
+        published = datetime.fromisoformat(date_gmt).replace(tzinfo=timezone.utc)
         if published.timestamp() < cutoff:
             continue
         tickers = extract_tickers(title)
@@ -51,7 +35,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         announcements.append(
             Announcement(
                 source_exchange="Kraken",
-                title=title,
+                title=title.strip(),
                 published_at_utc=published,
                 launch_at_utc=None,
                 url=link,
