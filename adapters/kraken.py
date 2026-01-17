@@ -8,7 +8,7 @@ import logging
 
 from dateutil import parser
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
+from adapters.common import Announcement, extract_tickers, guess_listing_type, infer_market_type, parse_datetime
 from http_client import get_text
 
 LOGGER = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if published.timestamp() < cutoff:
             continue
         tickers = extract_tickers(title)
+        market_type = infer_market_type(title, default="spot")
         announcements.append(
             Announcement(
                 source_exchange="Kraken",
@@ -55,6 +56,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 launch_at_utc=None,
                 url=link,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body="",
             )

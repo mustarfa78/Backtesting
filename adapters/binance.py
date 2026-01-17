@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 import logging
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc, infer_market_type
 from http_client import get_text
 
 LOGGER = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ def _parse_json_list(data: dict) -> List[Announcement]:
         published = ensure_utc(datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc))
         title = item.get("title", "")
         body = item.get("body", "") or item.get("content", "")
+        market_type = infer_market_type(f"{title} {body}", default="spot")
         url = f"https://www.binance.com/en/support/announcement/{item.get('code','')}"
         tickers = extract_tickers(f"{title} {body}")
         announcements.append(
@@ -43,6 +44,7 @@ def _parse_json_list(data: dict) -> List[Announcement]:
                 launch_at_utc=None,
                 url=url,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body=body,
             )
@@ -117,6 +119,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 body = item.get("content", "") or item.get("body", "")
                 link = item.get("url") or item.get("link") or ""
                 url_value = link if link.startswith("http") else f"https://www.binance.com{link}"
+                market_type = infer_market_type(f"{title} {body}", default="spot")
                 tickers = extract_tickers(f"{title} {body}")
                 announcements.append(
                     Announcement(
@@ -126,6 +129,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                         launch_at_utc=None,
                         url=url_value,
                         listing_type_guess=guess_listing_type(title),
+                        market_type=market_type,
                         tickers=tickers,
                         body=body,
                     )

@@ -9,7 +9,13 @@ import logging
 
 from bs4 import BeautifulSoup
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, parse_datetime
+from adapters.common import (
+    Announcement,
+    extract_tickers,
+    guess_listing_type,
+    infer_market_type,
+    parse_datetime,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +40,7 @@ def _parse_announcements(items, cutoff: float) -> List[Announcement]:
             published = datetime.fromtimestamp(int(published_ms) / 1000, tz=timezone.utc)
         if not published or published.timestamp() < cutoff:
             continue
+        market_type = infer_market_type(title, default="spot")
         tickers = extract_tickers(title)
         announcements.append(
             Announcement(
@@ -43,6 +50,7 @@ def _parse_announcements(items, cutoff: float) -> List[Announcement]:
                 launch_at_utc=None,
                 url=href,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body="",
             )
@@ -131,6 +139,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             published = parse_datetime(time_el["datetime"])
         if not published or published.timestamp() < cutoff:
             continue
+        market_type = infer_market_type(title, default="spot")
         tickers = extract_tickers(title)
         announcements.append(
             Announcement(
@@ -140,6 +149,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 launch_at_utc=None,
                 url=full_url,
                 listing_type_guess=guess_listing_type(title),
+                market_type=market_type,
                 tickers=tickers,
                 body="",
             )

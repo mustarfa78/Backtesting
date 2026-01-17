@@ -18,7 +18,7 @@ from adapters import (
     fetch_kucoin,
     fetch_xt,
 )
-from adapters.common import Announcement, futures_keyword_match
+from adapters.common import Announcement, SPOT_LISTING_KEYWORDS, futures_keyword_match
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
 from screening_utils import get_session
 from marketcap import resolve_market_cap
@@ -72,25 +72,41 @@ EXCLUDE_KEYWORDS = (
     "week",
 )
 
+SPOT_KEYWORDS = SPOT_LISTING_KEYWORDS
+
 
 def _passes_futures_intent(title: str) -> tuple[bool, List[str]]:
     lowered = title.lower()
     hits = [kw for kw in LAUNCH_KEYWORDS if kw in lowered]
     futures_hits = [kw for kw in FUTURES_KEYWORDS if kw in lowered]
-    excluded = [kw for kw in EXCLUDE_KEYWORDS if kw in lowered]
-    if excluded:
-        return False, ["excluded:" + ",".join(excluded)]
     if hits and futures_hits:
         return True, hits + futures_hits
     return False, hits + futures_hits
 
 
-def _passes_futures_intent_for_source(source: str, text: str) -> tuple[bool, List[str]]:
+def _passes_spot_intent(text: str) -> tuple[bool, List[str]]:
+    lowered = text.lower()
+    hits = [kw for kw in SPOT_KEYWORDS if kw in lowered]
+    if hits:
+        return True, hits
+    return False, hits
+
+
+def _passes_listing_intent_for_source(
+    source: str,
+    text: str,
+    market_type: str,
+) -> tuple[bool, List[str]]:
+    lowered = text.lower()
+    excluded = [kw for kw in EXCLUDE_KEYWORDS if kw in lowered]
+    if excluded:
+        return False, ["excluded:" + ",".join(excluded)]
     if source == "Bitget":
-        excluded = [kw for kw in EXCLUDE_KEYWORDS if kw in text.lower()]
-        if excluded:
-            return False, ["excluded:" + ",".join(excluded)]
-        return True, ["bitget_trusted"]
+        if market_type == "futures":
+            return True, ["bitget_trusted"]
+        return _passes_spot_intent(text)
+    if market_type == "spot":
+        return _passes_spot_intent(text)
     return _passes_futures_intent(text)
 
 def parse_args() -> argparse.Namespace:
@@ -250,6 +266,7 @@ def main() -> None:
         futures_filtered = []
         excluded_by_filter = 0
         keyword_hits: Dict[str, int] = {}
+        spot_keyword_hits: Dict[str, int] = {}
         excluded_reasons: Dict[str, int] = {}
         per_source_filtered: Dict[str, int] = {}
         per_source_tickers: Dict[str, int] = {}
@@ -260,26 +277,50 @@ def main() -> None:
         for announcement in announcements:
             if args.no_futures_filter:
                 futures_filtered.append(announcement)
+                per_source_filtered[announcement.source_exchange] = (
+                    per_source_filtered.get(announcement.source_exchange, 0) + 1
+                )
                 continue
             text = f"{announcement.title} {announcement.body}".strip()
             match = futures_keyword_match(text)
-            allowed, reasons = _passes_futures_intent_for_source(announcement.source_exchange, text)
-            if not match or not allowed:
+            allowed, reasons = _passes_listing_intent_for_source(
+                announcement.source_exchange,
+                text,
+                announcement.market_type,
+            )
+            if announcement.market_type == "futures" and match:
+                keyword_hits[match] = keyword_hits.get(match, 0) + 1
+            if announcement.market_type == "spot":
+                spot_match = next(
+                    (kw for kw in SPOT_KEYWORDS if kw in text.lower()),
+                    None,
+                )
+                if spot_match:
+                    spot_keyword_hits[spot_match] = spot_keyword_hits.get(spot_match, 0) + 1
+            requires_match = (
+                announcement.market_type == "futures" and "bitget_trusted" not in reasons
+            )
+            if not allowed or (requires_match and not match):
                 excluded_by_filter += 1
                 reason_key = ";".join(reasons) if reasons else "no_match"
                 excluded_reasons[reason_key] = excluded_reasons.get(reason_key, 0) + 1
                 continue
-            keyword_hits[match] = keyword_hits.get(match, 0) + 1
             futures_filtered.append(announcement)
             per_source_filtered[announcement.source_exchange] = (
                 per_source_filtered.get(announcement.source_exchange, 0) + 1
             )
 
-        LOGGER.info("after futures filter=%s excluded=%s", len(futures_filtered), excluded_by_filter)
+        LOGGER.info(
+            "after listing filter=%s excluded=%s",
+            len(futures_filtered),
+            excluded_by_filter,
+        )
         if keyword_hits:
             LOGGER.info("futures keyword hits=%s", keyword_hits)
+        if spot_keyword_hits:
+            LOGGER.info("spot keyword hits=%s", spot_keyword_hits)
         if excluded_reasons:
-            LOGGER.info("futures exclusion reasons=%s", excluded_reasons)
+            LOGGER.info("listing exclusion reasons=%s", excluded_reasons)
         LOGGER.info("after sort=%s", len(futures_filtered))
         for idx, announcement in enumerate(futures_filtered[:10]):
             LOGGER.info(
@@ -379,6 +420,7 @@ def main() -> None:
                     "ticker": ticker,
                     "mexc_symbol": symbol,
                     "listing_type": announcement.listing_type_guess,
+                    "market_type": announcement.market_type,
                     "announcement_datetime_utc": _format_dt(announcement.published_at_utc),
                     "launch_datetime_utc": _format_dt(announcement.launch_at_utc),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
@@ -429,7 +471,7 @@ def main() -> None:
             if adapter_stats["counts"].get(name, 0) == 0:
                 reason = "0 announcements fetched"
             elif per_source_filtered.get(name, 0) == 0:
-                reason = "0 passed futures filter"
+                reason = "0 passed listing filter"
             elif per_source_tickers.get(name, 0) == 0:
                 reason = "0 tickers extracted"
             elif per_source_mapped.get(name, 0) == 0:
@@ -453,6 +495,7 @@ def main() -> None:
         "ticker",
         "mexc_symbol",
         "listing_type",
+        "market_type",
         "announcement_datetime_utc",
         "launch_datetime_utc",
         "market_cap_usd_at_minus_1m",
