@@ -48,9 +48,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     "KuCoin sample title=%s type=%s publishAt=%s",
                     item.get("title"),
                     item_type,
-                    item.get("publishAt") or item.get("createdAt"),
+                    item.get("publishAt") or item.get("createdAt") or item.get("releaseTime"),
                 )
-            published_at = item.get("publishAt") or item.get("createdAt")
+            published_at = item.get("publishAt") or item.get("createdAt") or item.get("releaseTime")
             if published_at is None:
                 continue
             published_val = int(published_at)

@@ -101,7 +101,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 )
         else:
             cms_url = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
-            cms_params = {"type": 1, "pageNo": 1, "pageSize": 50, "catalogId": 48}
+            cms_params = {"type": 1, "pageNo": 1, "pageSize": 50, "catalogId": 48, "lang": "en"}
             LOGGER.info("Binance fallback url=%s params=%s", cms_url, cms_params)
             cms_data = get_json(session, cms_url, params=cms_params)
             announcements = _parse_json_list(cms_data)

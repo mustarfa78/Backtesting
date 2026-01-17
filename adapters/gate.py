@@ -109,4 +109,45 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Gate NEXT_DATA parse failed: %s", exc)
     LOGGER.info("Gate list parsing announcements=%s", len(announcements))
+    if not announcements:
+        api_url = "https://www.gate.io/api/web/v2/announcements"
+        params = {"type": "newlisted", "page": 1, "size": 50}
+        response = session.get(api_url, params=params, timeout=20)
+        LOGGER.info("Gate api url=%s params=%s status=%s", api_url, params, response.status_code)
+        if response.status_code in (403, 451) or response.status_code >= 500:
+            LOGGER.warning("Gate api response status=%s blocked_or_error", response.status_code)
+        try:
+            data = response.json()
+            items = data.get("data", {}).get("list", []) or data.get("data", [])
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Gate api parse failed: %s", exc)
+            items = []
+        LOGGER.info("Gate api items=%s", len(items))
+        for item in items:
+            title = item.get("title") or item.get("name") or ""
+            href = item.get("url") or item.get("link") or ""
+            if not title or not href:
+                continue
+            published_at = item.get("create_time") or item.get("publish_time")
+            if not published_at:
+                continue
+            published_val = int(published_at)
+            if published_val > 10_000_000_000:
+                published_val = int(published_val / 1000)
+            published = datetime.fromtimestamp(published_val, tz=timezone.utc)
+            if published.timestamp() < cutoff:
+                continue
+            tickers = extract_tickers(title)
+            announcements.append(
+                Announcement(
+                    source_exchange="Gate",
+                    title=title,
+                    published_at_utc=published,
+                    launch_at_utc=None,
+                    url=href,
+                    listing_type_guess=guess_listing_type(title),
+                    tickers=tickers,
+                    body="",
+                )
+            )
     return announcements

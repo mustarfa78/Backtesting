@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     url = "https://api.bitget.com/api/v2/public/annoucements"
-    params = {"annType": "coin_listings", "annSubType": "futures", "language": "en_US"}
+    params = {"annType": "coin_listings", "language": "en_US"}
     response = session.get(url, params=params, timeout=20)
     LOGGER.info("Bitget request url=%s params=%s", url, params)
     if response.status_code in (403, 451) or response.status_code >= 500:
@@ -35,9 +35,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         published = ensure_utc(datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc))
         if published.timestamp() < cutoff:
             continue
-        title = item.get("title", "")
-        body = item.get("content", "") or item.get("summary", "")
-        url = item.get("url", "")
+        title = item.get("title", "") or item.get("annTitle", "")
+        body = item.get("content", "") or item.get("summary", "") or item.get("annDesc", "")
+        url = item.get("url", "") or item.get("annUrl", "")
         tickers = extract_tickers(f"{title} {body}")
         if idx < 10:
             LOGGER.info(
