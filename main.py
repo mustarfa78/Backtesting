@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -26,6 +27,7 @@ from micro_highs import compute_micro_highs
 
 
 LOGGER = logging.getLogger(__name__)
+SUMMARY_LOGGER = logging.getLogger("summary")
 
 LAUNCH_KEYWORDS = (
     "will launch",
@@ -105,6 +107,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug-at", type=str, default="", help="UTC time to debug (ISO8601)")
     parser.add_argument("--debug-mexc-symbol", type=str, default="", help="MEXC base ticker to probe klines")
     parser.add_argument("--debug-window-min", type=int, default=60, help="Minutes for debug kline window")
+    parser.add_argument("--log-file", type=str, default="logs/run.log", help="Log file path")
     return parser.parse_args()
 
 
@@ -150,9 +153,33 @@ def _format_dt(dt: Optional[datetime]) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
 
+def _setup_logging(log_file: str) -> None:
+    log_dir = os.path.dirname(log_file)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        return
+    root_logger.setLevel(logging.DEBUG)
+
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    root_logger.addHandler(file_handler)
+
+    summary_handler = logging.StreamHandler()
+    summary_handler.setLevel(logging.INFO)
+    summary_handler.setFormatter(logging.Formatter("%(message)s"))
+    SUMMARY_LOGGER.setLevel(logging.INFO)
+    SUMMARY_LOGGER.addHandler(summary_handler)
+    SUMMARY_LOGGER.propagate = False
+
+
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    _setup_logging(args.log_file)
 
     session = get_session(use_cache=not args.no_cache, clear_cache=args.clear_cache)
     mexc = MexcFuturesClient(session)
@@ -172,12 +199,12 @@ def main() -> None:
                 LOGGER.info("adapter=%s sample_count=%s", name, len(samples))
                 for item in samples:
                     LOGGER.info(
-                    "adapter=%s sample title=%s published=%s url=%s",
-                    name,
-                    item.title,
-                    item.published_at_utc,
-                    item.url,
-                )
+                        "adapter=%s sample title=%s published=%s url=%s",
+                        name,
+                        item.title,
+                        item.published_at_utc,
+                        item.url,
+                    )
             return
         if args.debug_ticker and args.debug_at:
             debug_time = parser.isoparse(args.debug_at).astimezone(timezone.utc)
@@ -390,11 +417,18 @@ def main() -> None:
             candle_ok,
             qualified,
         )
-        LOGGER.info("per_source filtered=%s", per_source_filtered)
-        LOGGER.info("per_source tickers_extracted=%s", per_source_tickers)
-        LOGGER.info("per_source mexc_mapped_ok=%s", per_source_mapped)
-        LOGGER.info("per_source mexc_candle_ok=%s", per_source_candle_ok)
-        LOGGER.info("per_source final_rows=%s", per_source_rows)
+        SUMMARY_LOGGER.info(
+            "candidates checked=%s mapped=%s candle_ok=%s qualified=%s",
+            candidates_checked,
+            mapped,
+            candle_ok,
+            qualified,
+        )
+        SUMMARY_LOGGER.info("per_source filtered=%s", per_source_filtered)
+        SUMMARY_LOGGER.info("per_source tickers_extracted=%s", per_source_tickers)
+        SUMMARY_LOGGER.info("per_source mexc_mapped_ok=%s", per_source_mapped)
+        SUMMARY_LOGGER.info("per_source mexc_candle_ok=%s", per_source_candle_ok)
+        SUMMARY_LOGGER.info("per_source final_rows=%s", per_source_rows)
         for name in adapter_stats.get("counts", {}):
             if per_source_rows.get(name, 0) > 0:
                 continue
@@ -410,10 +444,10 @@ def main() -> None:
                 reason = "0 passed MEXC candle check"
             else:
                 reason = "0 rows after processing"
-            LOGGER.warning("adapter=%s zero rows reason=%s", name, reason)
+            SUMMARY_LOGGER.warning("adapter=%s zero rows reason=%s", name, reason)
         if rows or days_window >= max_days:
             if len(rows) < args.target:
-                LOGGER.warning(
+                SUMMARY_LOGGER.warning(
                     "Target %s not reached (rows=%s) within %s days",
                     args.target,
                     len(rows),
@@ -421,7 +455,7 @@ def main() -> None:
                 )
             break
         days_window = min(days_window * 2, max_days)
-        LOGGER.info("Expanding days window to %s to meet target %s", days_window, args.target)
+        SUMMARY_LOGGER.warning("Expanding days window to %s to meet target %s", days_window, args.target)
 
     fieldnames = [
         "source_exchange",
@@ -449,8 +483,8 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    LOGGER.info("rows_written=%s", len(rows))
-    LOGGER.info("Wrote %s rows to %s", len(rows), args.out)
+    SUMMARY_LOGGER.info("rows_written=%s", len(rows))
+    SUMMARY_LOGGER.info("Wrote %s rows to %s", len(rows), args.out)
 
 
 if __name__ == "__main__":
