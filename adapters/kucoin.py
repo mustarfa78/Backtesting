@@ -6,6 +6,7 @@ from typing import Dict, List
 import logging
 
 from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
+from loop_guard import LoopDetected, LoopGuard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,13 +19,16 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     last_page = None
     max_pages = 50
     seen_ids: set[str] = set()
+    guard = LoopGuard("KuCoin")
     total_items = 0
     type_counts: Dict[str, int] = {}
     while True:
         if last_page is not None and page == last_page:
-            raise RuntimeError("safety stop: pagination not advancing")
+            raise LoopDetected("KuCoin", "cursor_not_advancing", str(page))
         last_page = page
         params = {"language": "en_US", "pageNumber": page, "pageSize": 50}
+        request_sig = f"{url}|{sorted(params.items())}|{page}"
+        guard.record_request(request_sig)
         response = session.get(url, params=params, timeout=20)
         LOGGER.info("KuCoin request url=%s params=%s", url, params)
         if response.status_code in (403, 451) or response.status_code >= 500:
@@ -43,6 +47,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         total_items += len(items)
         page_new = 0
         oldest_ts = None
+        content_ids = []
         for idx, item in enumerate(items):
             item_type = item.get("type") or item.get("category") or ""
             if isinstance(item_type, list):
@@ -78,6 +83,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 continue
             seen_ids.add(event_id)
             page_new += 1
+            content_ids.append(event_id)
             announcements.append(
                 Announcement(
                     source_exchange="KuCoin",
@@ -90,14 +96,25 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     body=body,
                 )
             )
+        if content_ids:
+            content_sig = "|".join(sorted(content_ids))
+            guard.record_content(content_sig)
         if page >= max_pages:
-            raise RuntimeError("safety stop: max_pages reached")
+            raise LoopDetected("KuCoin", "max_pages", str(page))
         if oldest_ts is not None:
             oldest_time = datetime.fromtimestamp(oldest_ts, tz=timezone.utc)
             if oldest_time.timestamp() < cutoff:
                 break
         if page_new == 0:
-            break
+            raise LoopDetected("KuCoin", "zero_new_items", f"page={page}")
+        LOGGER.info(
+            "adapter=KuCoin iter=%s page=%s items=%s unique_new=%s oldest=%s",
+            page,
+            page,
+            len(items),
+            page_new,
+            oldest_time.isoformat() if oldest_ts else "n/a",
+        )
         page += 1
     if type_counts:
         LOGGER.info("KuCoin type distribution=%s", type_counts)

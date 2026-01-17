@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import logging
 
 from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc
+from loop_guard import LoopDetected, LoopGuard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     selected_tag = None
     max_pages = 50
     seen_ids: set[str] = set()
+    guard = LoopGuard("Bybit")
     while True:
         params = {"locale": "en-US", "limit": 50, "page": page}
         if selected_type:
@@ -43,8 +45,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if selected_tag:
             params["tag"] = selected_tag
         if last_page is not None and page == last_page:
-            raise RuntimeError("safety stop: pagination not advancing")
+            raise LoopDetected("Bybit", "cursor_not_advancing", str(page))
         last_page = page
+        request_sig = f"{url}|{sorted(params.items())}|{page}"
+        guard.record_request(request_sig)
         response = session.get(url, params=params, timeout=20)
         LOGGER.info("Bybit request url=%s params=%s", url, params)
         if response.status_code in (403, 451) or response.status_code >= 500:
@@ -71,6 +75,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         total_items += len(items)
         new_ids = 0
         oldest_ts = None
+        content_ids = []
         for item in items:
             type_key, tag_key = _extract_type_tag(item)
             if type_key:
@@ -103,6 +108,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             if event_id in seen_ids:
                 continue
             seen_ids.add(event_id)
+            content_ids.append(event_id)
             announcements.append(
                 Announcement(
                     source_exchange="Bybit",
@@ -116,12 +122,24 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                 )
             )
             new_ids += 1
+        if content_ids:
+            content_sig = "|".join(sorted(content_ids))
+            guard.record_content(content_sig)
+        oldest_time = None
         if oldest_ts is not None:
             oldest_time = ensure_utc(datetime.fromtimestamp(oldest_ts / 1000, tz=timezone.utc))
             if oldest_time.timestamp() < cutoff:
                 break
         if new_ids == 0:
-            break
+            raise LoopDetected("Bybit", "zero_new_items", f"page={page}")
+        LOGGER.info(
+            "adapter=Bybit iter=%s page=%s items=%s unique_new=%s oldest=%s",
+            fetched_pages,
+            page,
+            len(items),
+            new_ids,
+            oldest_time.isoformat() if oldest_ts else "n/a",
+        )
         if page == 1:
             if type_counts:
                 LOGGER.info("Bybit type distribution=%s", dict(type_counts.most_common(10)))
@@ -136,7 +154,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     selected_tag = key
                     break
         if page >= max_pages:
-            raise RuntimeError("safety stop: max_pages reached")
+            raise LoopDetected("Bybit", "max_pages", str(page))
         page += 1
 
     items_after_filter = len(announcements)
