@@ -24,7 +24,7 @@ _GATE_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-_GATE_ARTICLE_ID_RE = re.compile(r'href="/announcements/article/(\d+)"')
+_GATE_ARTICLE_ID_RE = re.compile(r"/announcements/article/(\d+)")
 _GATE_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+UTC")
 
 
@@ -102,17 +102,24 @@ def _fetch_gate_article(session, article_id: str) -> Announcement | None:
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    url = "https://www.gate.tv/announcements/newlisted"
-    response = session.get(url, headers=_GATE_HEADERS, timeout=20)
+    primary_url = "https://www.gate.com/announcements/newlisted"
+    fallback_url = "https://www.gate.tv/announcements/newlisted"
+    response = session.get(primary_url, headers=_GATE_HEADERS, timeout=20)
+    url = primary_url
+    if response.status_code == 403:
+        response = session.get(fallback_url, headers=_GATE_HEADERS, timeout=20)
+        url = fallback_url
     LOGGER.info("Gate list url=%s status=%s", url, response.status_code)
-    if response.status_code in (403, 451) or response.status_code >= 500:
+    if response.status_code >= 500 or response.status_code in (403, 451):
         LOGGER.warning("Gate list response status=%s blocked_or_error", response.status_code)
         return []
     response.raise_for_status()
     html = response.text
     announcements: List[Announcement] = []
     ids = _extract_listing_ids(html)
-    for article_id in ids:
+    domain = "gate.com" if url == primary_url else "gate.tv"
+    LOGGER.info("Gate ids found=%s using domain=%s", len(ids), domain)
+    for article_id in ids[:50]:
         announcement = _fetch_gate_article(session, article_id)
         if announcement:
             announcements.append(announcement)
