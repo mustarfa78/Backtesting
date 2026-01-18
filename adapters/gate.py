@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 
 import logging
 
@@ -28,60 +27,14 @@ _GATE_HEADERS = {
 
 _GATE_ARTICLE_ID_RE = re.compile(r'href="/announcements/article/(\d+)"')
 _GATE_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+UTC")
+_GATE_METRICS = {
+    "article_403_count": 0,
+    "timestamp_missing_count": 0,
+}
 
 
-def _parse_next_data(html: str) -> List[Announcement]:
-    soup = BeautifulSoup(html, "lxml")
-    script = soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script or not script.text:
-        return []
-    try:
-        data = json.loads(script.text)
-    except json.JSONDecodeError:
-        return []
-    payload = (
-        data.get("props", {})
-        .get("pageProps", {})
-        .get("initialState", {})
-        .get("notice", {})
-        .get("list", [])
-    )
-    announcements: List[Announcement] = []
-    for item in payload:
-        title = item.get("title", "").strip()
-        url = item.get("url", "")
-        published_ms = item.get("date") or item.get("time")
-        if not title or not url or not published_ms:
-            continue
-        published = datetime.fromtimestamp(int(published_ms) / 1000, tz=timezone.utc)
-        market_type = infer_market_type(title, default="spot")
-        tickers = extract_tickers(title)
-        announcements.append(
-            Announcement(
-                source_exchange="Gate",
-                title=title,
-                published_at_utc=published,
-                launch_at_utc=None,
-                url=url,
-                listing_type_guess=guess_listing_type(title),
-                market_type=market_type,
-                tickers=tickers,
-                body="",
-            )
-        )
-    return announcements
-
-
-def _extract_listing_ids(html: str) -> List[str]:
-    ids = _GATE_ARTICLE_ID_RE.findall(html)
-    seen = set()
-    out: List[str] = []
-    for item_id in ids:
-        if item_id in seen:
-            continue
-        seen.add(item_id)
-        out.append(item_id)
-    return out
+def get_metrics() -> dict:
+    return dict(_GATE_METRICS)
 
 
 def _extract_article_title(soup: BeautifulSoup) -> str:
@@ -96,14 +49,80 @@ def _extract_article_title(soup: BeautifulSoup) -> str:
     return ""
 
 
-def _fetch_gate_article(session, article_id: str) -> Announcement | None:
-    url = f"https://www.gate.tv/announcements/article/{article_id}"
-    response = session.get(url, headers=_GATE_HEADERS, timeout=20)
-    if response.status_code in (403, 451) or response.status_code >= 500:
-        LOGGER.warning("Gate article status=%s url=%s", response.status_code, url)
+def _parse_published_at(container: BeautifulSoup) -> datetime | None:
+    time_el = container.find("time")
+    if time_el:
+        time_value = time_el.get("datetime") or time_el.get_text(strip=True)
+        parsed = parse_datetime(time_value)
+        if parsed:
+            return parsed
+    text = container.get_text(" ", strip=True)
+    time_match = _GATE_TIME_RE.search(text)
+    if time_match:
+        return datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+    return None
+
+
+def _parse_list_items(html: str, base_url: str) -> List[dict]:
+    soup = BeautifulSoup(html, "lxml")
+    anchors = soup.find_all("a", href=_GATE_ARTICLE_ID_RE)
+    items = []
+    seen = set()
+    for anchor in anchors:
+        href = anchor.get("href", "")
+        match = _GATE_ARTICLE_ID_RE.search(href)
+        if not match:
+            continue
+        article_id = match.group(1)
+        if article_id in seen:
+            continue
+        title = anchor.get_text(" ", strip=True)
+        if not title:
+            continue
+        full_url = href if href.startswith("http") else f"{base_url}{href}"
+        published = _parse_published_at(anchor)
+        if not published:
+            parent = anchor.find_parent()
+            if parent:
+                published = _parse_published_at(parent)
+        items.append(
+            {
+                "id": article_id,
+                "title": title,
+                "url": full_url,
+                "published": published,
+            }
+        )
+        seen.add(article_id)
+    return items
+
+
+def _fetch_gate_article(session, article_id: str, base_url: str) -> Announcement | None:
+    bases = [base_url]
+    if base_url == "https://www.gate.com":
+        bases.append("https://www.gate.tv")
+    last_status = None
+    html = ""
+    url = ""
+    for base in bases:
+        url = f"{base}/announcements/article/{article_id}"
+        response = session.get(url, headers=_GATE_HEADERS, timeout=20)
+        last_status = response.status_code
+        if response.status_code == 403:
+            _GATE_METRICS["article_403_count"] += 1
+        if response.status_code in (403, 451) or response.status_code >= 500:
+            LOGGER.warning("Gate article status=%s url=%s", response.status_code, url)
+            continue
+        response.raise_for_status()
+        html = response.text
+        if html:
+            break
+    if not html:
+        if last_status is not None:
+            LOGGER.warning("Gate article fetch failed id=%s status=%s", article_id, last_status)
         return None
-    response.raise_for_status()
-    html = response.text
     time_match = _GATE_TIME_RE.search(html)
     if not time_match:
         return None
@@ -133,44 +152,9 @@ def _fetch_gate_article(session, article_id: str) -> Announcement | None:
     )
 
 
-def _extract_from_html(html: str) -> List[Announcement]:
-    soup = BeautifulSoup(html, "lxml")
-    items = list(soup.select("a.announcement-item, a.article-item, a.notice-item, a.notice-list-item"))
-    announcements: List[Announcement] = []
-    for item in items:
-        title = item.get_text(strip=True)
-        href = item.get("href", "")
-        if not title or not href:
-            continue
-        full_url = href if href.startswith("http") else f"https://www.gate.tv{href}"
-        time_el = item.find("time")
-        published: Optional[datetime] = None
-        if time_el and time_el.get("datetime"):
-            published = parse_datetime(time_el["datetime"])
-        if not published:
-            time_text = time_el.get_text(strip=True) if time_el else ""
-            published = parse_datetime(time_text)
-        if not published:
-            continue
-        market_type = infer_market_type(title, default="spot")
-        tickers = extract_tickers(title)
-        announcements.append(
-            Announcement(
-                source_exchange="Gate",
-                title=title,
-                published_at_utc=published,
-                launch_at_utc=None,
-                url=full_url,
-                listing_type_guess=guess_listing_type(title),
-                market_type=market_type,
-                tickers=tickers,
-                body="",
-            )
-        )
-    return announcements
-
-
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
+    _GATE_METRICS["article_403_count"] = 0
+    _GATE_METRICS["timestamp_missing_count"] = 0
     url = "https://www.gate.tv/announcements/newlisted"
     response = session.get(url, headers=_GATE_HEADERS, timeout=20)
     LOGGER.info("Gate list url=%s status=%s", url, response.status_code)
@@ -179,15 +163,33 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         return []
     response.raise_for_status()
     html = response.text
-    announcements = _parse_next_data(html)
-    if not announcements:
-        announcements = _extract_from_html(html)
-    if not announcements:
-        ids = _extract_listing_ids(html)
-        for article_id in ids:
-            announcement = _fetch_gate_article(session, article_id)
-            if announcement:
-                announcements.append(announcement)
+    base_url = "https://www.gate.tv" if "gate.tv" in response.url else "https://www.gate.com"
+    items = _parse_list_items(html, base_url)
+    announcements: List[Announcement] = []
+    for item in items:
+        article = _fetch_gate_article(session, item["id"], base_url)
+        if article:
+            announcements.append(article)
+            continue
+        if not item.get("published"):
+            _GATE_METRICS["timestamp_missing_count"] += 1
+            LOGGER.warning("Gate missing timestamp id=%s url=%s", item["id"], item["url"])
+            continue
+        market_type = infer_market_type(item["title"], default="spot")
+        tickers = extract_tickers(item["title"])
+        announcements.append(
+            Announcement(
+                source_exchange="Gate",
+                title=item["title"],
+                published_at_utc=item["published"],
+                launch_at_utc=None,
+                url=item["url"],
+                listing_type_guess=guess_listing_type(item["title"]),
+                market_type=market_type,
+                tickers=tickers,
+                body="",
+            )
+        )
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     filtered = [a for a in announcements if a.published_at_utc.timestamp() >= cutoff]
     LOGGER.info(

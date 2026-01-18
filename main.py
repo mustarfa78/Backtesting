@@ -14,6 +14,7 @@ from adapters import (
     fetch_bitget,
     fetch_bybit,
     fetch_gate,
+    get_gate_metrics,
     fetch_kraken,
     fetch_kucoin,
     fetch_xt,
@@ -471,13 +472,24 @@ def main() -> None:
             candle_ok,
             qualified,
         )
+        per_source_announcements = dict(adapter_stats.get("counts", {}))
+        gate_metrics = get_gate_metrics()
+        for name in adapter_stats.get("counts", {}):
+            per_source_filtered.setdefault(name, 0)
+            per_source_tickers.setdefault(name, 0)
+            per_source_mapped.setdefault(name, 0)
+            per_source_candle_ok.setdefault(name, 0)
+            per_source_rows.setdefault(name, 0)
         summary_lines = [
             f"candidates checked={candidates_checked} mapped={mapped} candle_ok={candle_ok} qualified={qualified}",
-            f"per_source filtered={per_source_filtered}",
-            f"per_source tickers_extracted={per_source_tickers}",
+            f"per_source announcements_fetched={per_source_announcements}",
+            f"per_source listing_filter_pass_count={per_source_filtered}",
+            f"per_source tickers_extracted_count={per_source_tickers}",
             f"per_source mexc_mapped_ok={per_source_mapped}",
             f"per_source mexc_candle_ok={per_source_candle_ok}",
             f"per_source final_rows={per_source_rows}",
+            f"gate_article_403_count={gate_metrics.get('article_403_count', 0)}",
+            f"gate_timestamp_missing_count={gate_metrics.get('timestamp_missing_count', 0)}",
         ]
         for name in adapter_stats.get("counts", {}):
             if per_source_rows.get(name, 0) > 0:

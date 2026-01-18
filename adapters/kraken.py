@@ -13,9 +13,22 @@ from http_client import get_json
 LOGGER = logging.getLogger(__name__)
 
 _KRAKEN_AVAILABLE_RE = re.compile(
-    r"\\b([A-Z0-9]{2,10})\\b\\s+is\\s+(?:now\\s+)?available\\s+for\\s+trading",
+    r"\b([A-Z0-9]{2,15})\b\s+IS\s+(?:NOW\s+)?AVAILABLE\s+FOR\s+TRADING\b",
     re.IGNORECASE,
 )
+_KRAKEN_TRADING_STARTS_RE = re.compile(
+    r"TRADING\s+STARTS\s+FOR\s+([A-Z0-9]{2,15})",
+    re.IGNORECASE,
+)
+
+
+def _extract_kraken_tickers(title: str) -> List[str]:
+    upper = title.upper()
+    for pattern in (_KRAKEN_AVAILABLE_RE, _KRAKEN_TRADING_STARTS_RE):
+        match = pattern.search(upper)
+        if match:
+            return [match.group(1).upper()]
+    return []
 
 
 def _fetch_asset_listing_category_id(session) -> Optional[int]:
@@ -64,9 +77,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         content_text = re.sub(r"<.*?>", " ", content)
         tickers = extract_tickers(f"{title} {content_text}")
         if not tickers:
-            match = _KRAKEN_AVAILABLE_RE.search(f"{title} {content_text}")
-            if match:
-                tickers = [match.group(1).upper()]
+            tickers = _extract_kraken_tickers(title)
         market_type = infer_market_type(title, default="spot")
         if len(titles_sample) < 10:
             titles_sample.append(title)
