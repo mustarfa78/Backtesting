@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import List
@@ -27,6 +28,10 @@ _GATE_HEADERS = {
 
 _GATE_ARTICLE_ID_RE = re.compile(r'href="/announcements/article/(\d+)"')
 _GATE_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+UTC")
+_GATE_ANY_ARTICLE_URL_RE = re.compile(
+    r'(https?://[^"\s>]*announcements[^"\s>]*article[^"\s>]*|/announcements[^"\s>]*article[^"\s>]*)'
+)
+_GATE_ANY_ARTICLE_ID_RE = re.compile(r"/announcements/[^\"\s>]*?article/(\d+)")
 _GATE_METRICS = {
     "article_403_count": 0,
     "timestamp_missing_count": 0,
@@ -35,6 +40,18 @@ _GATE_METRICS = {
 
 def get_metrics() -> dict:
     return dict(_GATE_METRICS)
+
+
+def _log_list_page_debug(html: str) -> None:
+    preview = html[:800]
+    counts = {
+        "announcements/article": html.count("announcements/article"),
+        "/article/": html.count("/article/"),
+        "__NEXT_DATA__": html.count("__NEXT_DATA__"),
+        "window.__NUXT__": html.count("window.__NUXT__"),
+    }
+    LOGGER.info("Gate list html preview=%s", preview)
+    LOGGER.info("Gate list html counts=%s", counts)
 
 
 def _extract_article_title(soup: BeautifulSoup) -> str:
@@ -47,6 +64,50 @@ def _extract_article_title(soup: BeautifulSoup) -> str:
     if soup.title:
         return soup.title.get_text(strip=True)
     return ""
+
+
+def _extract_embedded_json(html: str) -> list[dict]:
+    payloads: list[dict] = []
+    soup = BeautifulSoup(html, "lxml")
+    script = soup.find("script", {"id": "__NEXT_DATA__"})
+    if script and script.text:
+        try:
+            payloads.append(json.loads(script.text))
+        except json.JSONDecodeError:
+            LOGGER.warning("Gate __NEXT_DATA__ parse failed")
+    if "window.__NUXT__" in html:
+        match = re.search(r"window\.__NUXT__\s*=\s*(\{.*\})\s*;?", html, re.DOTALL)
+        if match:
+            raw = match.group(1)
+            try:
+                payloads.append(json.loads(raw))
+            except json.JSONDecodeError:
+                LOGGER.warning("Gate window.__NUXT__ parse failed")
+    return payloads
+
+
+def _walk_json_for_items(payload: object) -> list[dict]:
+    items: list[dict] = []
+    if isinstance(payload, dict):
+        lowered_keys = {str(k).lower(): k for k in payload.keys()}
+        if "title" in lowered_keys and ("id" in lowered_keys or "article_id" in lowered_keys):
+            title_key = lowered_keys["title"]
+            id_key = lowered_keys.get("id") or lowered_keys.get("article_id")
+            url_key = lowered_keys.get("url") or lowered_keys.get("link")
+            items.append(
+                {
+                    "id": str(payload.get(id_key, "")),
+                    "title": str(payload.get(title_key, "")),
+                    "url": str(payload.get(url_key, "")) if url_key else "",
+                    "published": None,
+                }
+            )
+        for value in payload.values():
+            items.extend(_walk_json_for_items(value))
+    elif isinstance(payload, list):
+        for entry in payload:
+            items.extend(_walk_json_for_items(entry))
+    return items
 
 
 def _parse_published_at(container: BeautifulSoup) -> datetime | None:
@@ -93,6 +154,60 @@ def _parse_list_items(html: str, base_url: str) -> List[dict]:
                 "title": title,
                 "url": full_url,
                 "published": published,
+            }
+        )
+        seen.add(article_id)
+    return items
+
+
+def _parse_items_from_embedded_json(html: str, base_url: str) -> list[dict]:
+    payloads = _extract_embedded_json(html)
+    items: list[dict] = []
+    seen = set()
+    for payload in payloads:
+        for entry in _walk_json_for_items(payload):
+            article_id = entry.get("id", "").strip()
+            title = entry.get("title", "").strip()
+            if not article_id or not title or article_id in seen:
+                continue
+            url = entry.get("url") or f"{base_url}/announcements/article/{article_id}"
+            if url and url.startswith("/"):
+                url = f"{base_url}{url}"
+            items.append(
+                {
+                    "id": article_id,
+                    "title": title,
+                    "url": url,
+                    "published": None,
+                }
+            )
+            seen.add(article_id)
+    return items
+
+
+def _parse_items_from_any_urls(html: str, base_url: str) -> list[dict]:
+    matches = _GATE_ANY_ARTICLE_URL_RE.findall(html)
+    samples = matches[:10]
+    if matches:
+        LOGGER.info("Gate fallback url samples=%s", samples)
+    items: list[dict] = []
+    seen = set()
+    for url in matches:
+        match = _GATE_ANY_ARTICLE_ID_RE.search(url)
+        if not match:
+            continue
+        article_id = match.group(1)
+        if article_id in seen:
+            continue
+        full_url = url
+        if full_url.startswith("/"):
+            full_url = f"{base_url}{full_url}"
+        items.append(
+            {
+                "id": article_id,
+                "title": "",
+                "url": full_url,
+                "published": None,
             }
         )
         seen.add(article_id)
@@ -163,8 +278,13 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         return []
     response.raise_for_status()
     html = response.text
+    _log_list_page_debug(html)
     base_url = "https://www.gate.tv" if "gate.tv" in response.url else "https://www.gate.com"
     items = _parse_list_items(html, base_url)
+    if not items:
+        items = _parse_items_from_embedded_json(html, base_url)
+    if not items:
+        items = _parse_items_from_any_urls(html, base_url)
     announcements: List[Announcement] = []
     for item in items:
         article = _fetch_gate_article(session, item["id"], base_url)
@@ -174,6 +294,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if not item.get("published"):
             _GATE_METRICS["timestamp_missing_count"] += 1
             LOGGER.warning("Gate missing timestamp id=%s url=%s", item["id"], item["url"])
+            continue
+        if not item.get("title"):
+            LOGGER.warning("Gate missing title id=%s url=%s", item["id"], item["url"])
             continue
         market_type = infer_market_type(item["title"], default="spot")
         tickers = extract_tickers(item["title"])
