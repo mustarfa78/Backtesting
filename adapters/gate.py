@@ -24,70 +24,44 @@ _GATE_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-_GATE_ARTICLE_ID_RE = re.compile(r'href="/announcements/article/(\d+)"')
+_GATE_ARTICLE_ID_RE = re.compile(r"/announcements/article/(\d+)")
 _GATE_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+UTC")
 
 
-def _extract_listing_ids(html: str) -> List[str]:
-    ids = _GATE_ARTICLE_ID_RE.findall(html)
-    seen = set()
-    out: List[str] = []
-    for item_id in ids:
-        if item_id in seen:
-            continue
-        seen.add(item_id)
-        out.append(item_id)
-    return out
+def _fetch_listing_ids(session, base_url: str) -> List[str]:
+    response = session.get(base_url, headers=_GATE_HEADERS, timeout=20)
+    LOGGER.info("Gate listing url=%s status=%s", base_url, response.status_code)
+    if response.status_code in (403, 451) or response.status_code >= 500:
+        LOGGER.warning("Gate listing response status=%s blocked_or_error", response.status_code)
+        return []
+    response.raise_for_status()
+    return list(dict.fromkeys(_GATE_ARTICLE_ID_RE.findall(response.text)))
 
 
-def _extract_article_title(soup: BeautifulSoup) -> str:
-    h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        return h1.get_text(strip=True)
-    og_title = soup.find("meta", {"property": "og:title"})
-    if og_title and og_title.get("content"):
-        return og_title["content"].strip()
-    if soup.title:
-        return soup.title.get_text(strip=True)
-    return ""
-
-
-def _fetch_gate_article(session, article_id: str) -> Announcement | None:
-    bases = ("https://www.gate.com", "https://www.gate.tv")
-    last_status = None
-    html = ""
-    url = ""
-    for base in bases:
-        url = f"{base}/announcements/article/{article_id}"
-        response = session.get(url, headers=_GATE_HEADERS, timeout=20)
-        last_status = response.status_code
-        if response.status_code in (403, 451) or response.status_code >= 500:
-            LOGGER.warning("Gate article status=%s url=%s", response.status_code, url)
-            continue
-        response.raise_for_status()
-        html = response.text
-        if html:
-            break
-    if not html:
-        if last_status is not None:
-            LOGGER.warning("Gate article fetch failed id=%s status=%s", article_id, last_status)
+def _parse_gate_article(session, article_id: str, base_domain: str) -> Announcement | None:
+    url = f"{base_domain}/announcements/article/{article_id}"
+    response = session.get(url, headers=_GATE_HEADERS, timeout=20)
+    if response.status_code in (403, 451) or response.status_code >= 500:
+        LOGGER.warning("Gate article status=%s url=%s", response.status_code, url)
         return None
+    response.raise_for_status()
+    html = response.text
     time_match = _GATE_TIME_RE.search(html)
-    if not time_match:
+    timestamp = time_match.group(1) if time_match else None
+    if not timestamp:
         return None
-    published = datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    published = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     soup = BeautifulSoup(html, "lxml")
-    title = _extract_article_title(soup)
+    title = ""
+    title_el = soup.find("h1")
+    if title_el:
+        title = title_el.get_text(strip=True)
+    if not title:
+        title = soup.title.get_text(strip=True) if soup.title else ""
     if not title:
         return None
-    body_text = soup.get_text(" ", strip=True)
-    body_snippet = body_text[:2000]
     market_type = infer_market_type(title, default="spot")
     tickers = extract_tickers(title)
-    if not tickers and body_snippet:
-        tickers = extract_tickers(f"{title} {body_snippet}")
     return Announcement(
         source_exchange="Gate",
         title=title,
@@ -97,30 +71,28 @@ def _fetch_gate_article(session, article_id: str) -> Announcement | None:
         listing_type_guess=guess_listing_type(title),
         market_type=market_type,
         tickers=tickers,
-        body=body_snippet,
+        body="",
     )
+
+
+def _fetch_from_domain(session, domain: str, cutoff: float) -> List[Announcement]:
+    listings_url = f"{domain}/announcements/newlisted"
+    ids = _fetch_listing_ids(session, listings_url)
+    announcements: List[Announcement] = []
+    for article_id in ids:
+        announcement = _parse_gate_article(session, article_id, domain)
+        if not announcement:
+            continue
+        if announcement.published_at_utc.timestamp() < cutoff:
+            continue
+        announcements.append(announcement)
+    LOGGER.info("Gate parsed announcements=%s from %s", len(announcements), domain)
+    return announcements
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    url = "https://www.gate.tv/announcements/newlisted"
-    response = session.get(url, headers=_GATE_HEADERS, timeout=20)
-    LOGGER.info("Gate list url=%s status=%s", url, response.status_code)
-    if response.status_code in (403, 451) or response.status_code >= 500:
-        LOGGER.warning("Gate list response status=%s blocked_or_error", response.status_code)
-        return []
-    response.raise_for_status()
-    html = response.text
-    announcements: List[Announcement] = []
-    ids = _extract_listing_ids(html)
-    for article_id in ids:
-        announcement = _fetch_gate_article(session, article_id)
-        if announcement:
-            announcements.append(announcement)
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    filtered = [a for a in announcements if a.published_at_utc.timestamp() >= cutoff]
-    LOGGER.info(
-        "Gate parsed announcements=%s filtered=%s",
-        len(announcements),
-        len(filtered),
-    )
-    return filtered
+    announcements = _fetch_from_domain(session, "https://www.gate.com", cutoff)
+    if announcements:
+        return announcements
+    return _fetch_from_domain(session, "https://www.gate.tv", cutoff)
