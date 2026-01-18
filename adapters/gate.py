@@ -36,6 +36,19 @@ _GATE_METRICS = {
     "article_403_count": 0,
     "timestamp_missing_count": 0,
 }
+_GATE_MARKERS = [
+    "Access Denied",
+    "restricted",
+    "not available",
+    "captcha",
+    "Cloudflare",
+    "__NEXT_DATA__",
+    "window.__NUXT__",
+    "article",
+    "publish",
+    "date",
+    "time",
+]
 
 
 def get_metrics() -> dict:
@@ -86,6 +99,26 @@ def _extract_embedded_json(html: str) -> list[dict]:
     return payloads
 
 
+def _extract_datetime_from_payload(payload: object) -> datetime | None:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if isinstance(value, (dict, list)):
+                parsed = _extract_datetime_from_payload(value)
+                if parsed:
+                    return parsed
+            if isinstance(value, str):
+                parsed = parse_datetime(value)
+                if parsed:
+                    return parsed
+        return None
+    if isinstance(payload, list):
+        for entry in payload:
+            parsed = _extract_datetime_from_payload(entry)
+            if parsed:
+                return parsed
+    return None
+
+
 def _walk_json_for_items(payload: object) -> list[dict]:
     items: list[dict] = []
     if isinstance(payload, dict):
@@ -94,12 +127,19 @@ def _walk_json_for_items(payload: object) -> list[dict]:
             title_key = lowered_keys["title"]
             id_key = lowered_keys.get("id") or lowered_keys.get("article_id")
             url_key = lowered_keys.get("url") or lowered_keys.get("link")
+            published = None
+            for dt_key in ("date", "date_gmt", "created_at", "createdat", "time", "published_at"):
+                payload_key = lowered_keys.get(dt_key)
+                if payload_key:
+                    published = parse_datetime(str(payload.get(payload_key, "")))
+                    if published:
+                        break
             items.append(
                 {
                     "id": str(payload.get(id_key, "")),
                     "title": str(payload.get(title_key, "")),
                     "url": str(payload.get(url_key, "")) if url_key else "",
-                    "published": None,
+                    "published": published,
                 }
             )
         for value in payload.values():
@@ -178,7 +218,7 @@ def _parse_items_from_embedded_json(html: str, base_url: str) -> list[dict]:
                     "id": article_id,
                     "title": title,
                     "url": url,
-                    "published": None,
+                    "published": entry.get("published"),
                 }
             )
             seen.add(article_id)
@@ -225,13 +265,25 @@ def _fetch_gate_article(session, article_id: str, base_url: str) -> Announcement
         url = f"{base}/announcements/article/{article_id}"
         response = session.get(url, headers=_GATE_HEADERS, timeout=20)
         last_status = response.status_code
+        content_type = response.headers.get("Content-Type", "")
+        body_text = response.text or ""
+        markers = {marker: marker in body_text for marker in _GATE_MARKERS}
+        preview = body_text[:300]
+        LOGGER.info(
+            "Gate article url=%s status=%s content_type=%s preview=%s markers=%s",
+            url,
+            response.status_code,
+            content_type,
+            preview,
+            markers,
+        )
         if response.status_code == 403:
             _GATE_METRICS["article_403_count"] += 1
         if response.status_code in (403, 451) or response.status_code >= 500:
             LOGGER.warning("Gate article status=%s url=%s", response.status_code, url)
             continue
         response.raise_for_status()
-        html = response.text
+        html = body_text
         if html:
             break
     if not html:
@@ -239,11 +291,18 @@ def _fetch_gate_article(session, article_id: str, base_url: str) -> Announcement
             LOGGER.warning("Gate article fetch failed id=%s status=%s", article_id, last_status)
         return None
     time_match = _GATE_TIME_RE.search(html)
-    if not time_match:
+    published = None
+    if time_match:
+        published = datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+    if not published:
+        for payload in _extract_embedded_json(html):
+            published = _extract_datetime_from_payload(payload)
+            if published:
+                break
+    if not published:
         return None
-    published = datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
     soup = BeautifulSoup(html, "lxml")
     title = _extract_article_title(soup)
     if not title:
@@ -287,6 +346,23 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         items = _parse_items_from_any_urls(html, base_url)
     announcements: List[Announcement] = []
     for item in items:
+        if item.get("published") and item.get("title"):
+            market_type = infer_market_type(item["title"], default="spot")
+            tickers = extract_tickers(item["title"])
+            announcements.append(
+                Announcement(
+                    source_exchange="Gate",
+                    title=item["title"],
+                    published_at_utc=item["published"],
+                    launch_at_utc=None,
+                    url=item["url"],
+                    listing_type_guess=guess_listing_type(item["title"]),
+                    market_type=market_type,
+                    tickers=tickers,
+                    body="",
+                )
+            )
+            continue
         article = _fetch_gate_article(session, item["id"], base_url)
         if article:
             announcements.append(article)

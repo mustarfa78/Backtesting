@@ -491,6 +491,14 @@ def main() -> None:
             f"gate_article_403_count={gate_metrics.get('article_403_count', 0)}",
             f"gate_timestamp_missing_count={gate_metrics.get('timestamp_missing_count', 0)}",
         ]
+        if (
+            gate_metrics.get("timestamp_missing_count", 0) > 20
+            and gate_metrics.get("article_403_count", 0) == 0
+        ):
+            summary_lines.append(
+                "Gate likely returning restricted/placeholder pages (region/bot protection). "
+                "Check HTML preview logs."
+            )
         for name in adapter_stats.get("counts", {}):
             if per_source_rows.get(name, 0) > 0:
                 continue
