@@ -317,6 +317,12 @@ def main() -> None:
             )
             if announcement.source_exchange == "Kraken":
                 kraken_listing_pass += 1
+            if announcement.source_exchange == "Gate" and not announcement.tickers:
+                LOGGER.info(
+                    "Gate passed listing_filter but tickers_extracted empty: %s %s",
+                    announcement.title,
+                    announcement.url,
+                )
 
         LOGGER.info(
             "after listing filter=%s excluded=%s",

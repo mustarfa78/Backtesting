@@ -151,6 +151,48 @@ _PAIR_PATTERN = re.compile(
     r"([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB)"
 )
 _PAREN_TICKER_PATTERN = re.compile(r"\\(([A-Z0-9]{2,15})\\)")
+_FALLBACK_TICKER_PATTERN = re.compile(r"\b[A-Z0-9]{2,15}\b")
+_FALLBACK_HINT_PATTERNS = [
+    re.compile(r"\bSUPPORTS\s+([A-Z0-9]{2,15})\b"),
+    re.compile(r"\bLISTS?\s+([A-Z0-9]{2,15})\b"),
+    re.compile(r"\bADDS?\s+([A-Z0-9]{2,15})\b"),
+]
+_FALLBACK_STOPWORDS = {
+    "GATE",
+    "NOW",
+    "SUPPORTS",
+    "FOR",
+    "FUTURES",
+    "TRADING",
+    "SPOT",
+    "MARGIN",
+    "LOANS",
+    "BOTS",
+    "COPY",
+    "CONVERT",
+    "AUTO",
+    "INVEST",
+    "PERP",
+    "DEX",
+    "AND",
+    "WILL",
+    "LIST",
+    "LAUNCH",
+    "ADD",
+    "NEW",
+    "AVAILABLE",
+    "OPEN",
+    "STARTS",
+    "START",
+    "TRADE",
+    "MARKET",
+    "USDT",
+    "USDC",
+    "USD",
+    "BTC",
+    "ETH",
+    "BNB",
+}
 
 
 def get_session(use_cache: bool = True, clear_cache: bool = False) -> requests.Session:
@@ -230,7 +272,16 @@ def extract_tickers(text: str) -> List[str]:
         if base:
             bases.add(base)
 
-    filtered = [base for base in bases if base not in IGNORE_WORDS]
+    if not bases:
+        for pattern in _FALLBACK_HINT_PATTERNS:
+            bases.update(pattern.findall(upper))
+        bases.update(_FALLBACK_TICKER_PATTERN.findall(upper))
+
+    filtered = [
+        base
+        for base in bases
+        if base not in IGNORE_WORDS and base not in _FALLBACK_STOPWORDS
+    ]
     result = sorted(set(filtered))
 
     global _extract_log_count
@@ -264,6 +315,12 @@ if __name__ == "__main__":
         def test_extract_bitget_pair(self):
             title = "FUNUSDT now launched for futures trading and trading bots"
             self.assertEqual(extract_tickers(title), ["FUN"])
+
+        def test_extract_supports_fallback(self):
+            title = (
+                "Gate Now Supports FRAX for Futures Trading, Gate Perp DEX, Margin Loans, Bots, Copy"
+            )
+            self.assertEqual(extract_tickers(title), ["FRAX"])
 
     unittest.main()
 
