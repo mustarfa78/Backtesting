@@ -35,6 +35,8 @@ LAUNCH_KEYWORDS = (
     "list",
     "introduce",
     "add",
+    "support",
+    "supports",
     "open trading",
     "pre-market trading",
     "premarket trading",
@@ -315,6 +317,12 @@ def main() -> None:
             per_source_filtered[announcement.source_exchange] = (
                 per_source_filtered.get(announcement.source_exchange, 0) + 1
             )
+            if announcement.source_exchange == "Gate" and not announcement.tickers:
+                LOGGER.info(
+                    "Gate passed listing_filter but tickers_extracted empty: %s %s",
+                    announcement.title,
+                    announcement.url,
+                )
             if announcement.source_exchange == "Kraken":
                 kraken_listing_pass += 1
 
