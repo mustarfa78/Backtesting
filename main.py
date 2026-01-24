@@ -435,6 +435,39 @@ def main() -> None:
                     notes.append(mc_note)
                 notes.extend(micro_result.notes)
 
+                # --- New Launch Time Analysis ---
+                launch_metrics = {}
+                if announcement.launch_at_utc:
+                    launch_dt = announcement.launch_at_utc.replace(second=0, microsecond=0)
+                    if abs((launch_dt - at_time).total_seconds()) > 600: # > 10 min difference
+                         LOGGER.info("Analyzing launch time for %s: %s", ticker, launch_dt)
+                         launch_window_start = launch_dt
+                         launch_window_end = launch_dt + timedelta(minutes=90)
+                         # Fetch new candles if needed or separate call
+                         # Usually fetch_klines for different window
+                         launch_candles = mexc.fetch_klines(symbol, launch_window_start, launch_window_end)
+                         if launch_candles:
+                             launch_res = compute_micro_highs(
+                                launch_candles,
+                                window_start=launch_window_start,
+                                window_end=launch_window_end,
+                                lookahead_bars=LOOKAHEAD_BARS,
+                                min_pullback_pct=MIN_PULLBACK_PCT,
+                             )
+                             launch_metrics = {
+                                "launch_max_price_1_close": f"{launch_res.max_price_1_close:.6f}" if launch_res.max_price_1_close else "",
+                                "launch_max_price_1_time_utc": _format_dt(launch_res.max_price_1_time),
+                                "launch_lowest_after_1_close": f"{launch_res.lowest_after_1_close:.6f}" if launch_res.lowest_after_1_close else "",
+                                "launch_lowest_after_1_time_utc": _format_dt(launch_res.lowest_after_1_time),
+                                "launch_max_price_2_close": f"{launch_res.max_price_2_close:.6f}" if launch_res.max_price_2_close else "",
+                                "launch_max_price_2_time_utc": _format_dt(launch_res.max_price_2_time),
+                                "launch_lowest_after_2_close": f"{launch_res.lowest_after_2_close:.6f}" if launch_res.lowest_after_2_close else "",
+                                "launch_lowest_after_2_time_utc": _format_dt(launch_res.lowest_after_2_time),
+                             }
+                         else:
+                             LOGGER.info("Missing MEXC candles for Launch Time %s", launch_dt)
+                             notes.append(f"No candles for launch at {launch_dt}")
+
                 row = {
                     "source_exchange": announcement.source_exchange,
                     "ticker": ticker,
@@ -464,6 +497,16 @@ def main() -> None:
                     "source_url": announcement.url,
                     "notes": "; ".join(notes),
                 }
+                # Merge launch metrics
+                row.update(launch_metrics)
+                # Ensure all keys present (empty strings for missing)
+                for key in ["launch_max_price_1_close", "launch_max_price_1_time_utc",
+                            "launch_lowest_after_1_close", "launch_lowest_after_1_time_utc",
+                            "launch_max_price_2_close", "launch_max_price_2_time_utc",
+                            "launch_lowest_after_2_close", "launch_lowest_after_2_time_utc"]:
+                    if key not in row:
+                        row[key] = ""
+
                 rows.append(row)
                 per_source_rows[announcement.source_exchange] = (
                     per_source_rows.get(announcement.source_exchange, 0) + 1
@@ -536,6 +579,14 @@ def main() -> None:
         "max_price_2_time_utc",
         "lowest_after_2_close",
         "lowest_after_2_time_utc",
+        "launch_max_price_1_close",
+        "launch_max_price_1_time_utc",
+        "launch_lowest_after_1_close",
+        "launch_lowest_after_1_time_utc",
+        "launch_max_price_2_close",
+        "launch_max_price_2_time_utc",
+        "launch_lowest_after_2_close",
+        "launch_lowest_after_2_time_utc",
         "source_url",
         "notes",
     ]

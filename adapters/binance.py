@@ -5,7 +5,7 @@ from typing import List
 
 import logging
 
-from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc, infer_market_type
+from adapters.common import Announcement, extract_tickers, guess_listing_type, ensure_utc, infer_market_type, extract_launch_time
 
 LOGGER = logging.getLogger(__name__)
 
@@ -16,6 +16,22 @@ _BINANCE_HEADERS = {
     "clienttype": "web",
     "Accept": "application/json, text/plain, */*",
 }
+
+
+def _fetch_article_detail(session, code: str) -> str:
+    detail_url = "https://www.binance.com/bapi/composite/v1/public/cms/article/detail/query"
+    params = {"articleCode": code}
+    try:
+        response = session.get(detail_url, params=params, headers=_BINANCE_HEADERS, timeout=10)
+        if response.status_code != 200:
+            LOGGER.warning("Binance detail fetch failed code=%s status=%s", code, response.status_code)
+            return ""
+        data = response.json()
+        article = data.get("data", {}) or {}
+        return str(article.get("body", "") or "")
+    except Exception as exc:
+        LOGGER.warning("Binance detail fetch exception code=%s exc=%s", code, exc)
+        return ""
 
 
 def _fetch_cms_articles(session) -> List[Announcement]:
@@ -47,17 +63,29 @@ def _fetch_cms_articles(session) -> List[Announcement]:
             url = f"https://www.binance.com/en/support/announcement/{code}"
             market_type = infer_market_type(title, default="spot")
             tickers = extract_tickers(title)
+
+            body = ""
+            launch_at_utc = extract_launch_time(title, published)
+
+            # If no launch time in title, and it looks like a future listing (or just generally),
+            # fetch the body to look deeper.
+            # Instruction: "For items that look like futures listings, fetch the specific article detail"
+            if market_type == "futures":
+                body = _fetch_article_detail(session, code)
+                if not launch_at_utc:
+                     launch_at_utc = extract_launch_time(body, published)
+
             announcements.append(
                 Announcement(
                     source_exchange="Binance",
                     title=title,
                     published_at_utc=published,
-                    launch_at_utc=None,
+                    launch_at_utc=launch_at_utc,
                     url=url,
                     listing_type_guess=guess_listing_type(title),
                     market_type=market_type,
                     tickers=tickers,
-                    body="",
+                    body=body,
                 )
             )
     return announcements

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional
@@ -113,3 +114,59 @@ def parse_datetime(value: str) -> Optional[datetime]:
     except (ValueError, TypeError):
         return None
     return ensure_utc(parsed)
+
+
+def extract_launch_time(text: str, publish_time: datetime) -> Optional[datetime]:
+    """
+    Extracts trading launch time from text, assuming UTC if specified or defaulting to it.
+    Prioritizes full dates found in text.
+    """
+    if not text:
+        return None
+
+    # 1. ISO-ish format: "2024-09-17 12:30 (UTC)" or "2024-09-17 12:30UTC"
+    iso_pattern = r"(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})\s*\(?UTC\)?"
+
+    # 2. Month Name format: "Jan 14, 2026, 8:00AM UTC" or "January 14 2026 08:00 UTC"
+    # Matches: Month (full or abbr), Day, Year (optional comma), Time, AM/PM (optional), UTC
+    month_pattern = r"([A-Za-z]+\s+\d{1,2},?\s+\d{4},?\s+(?:at\s+)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)\s*\(?UTC\)?"
+
+    # Search for ISO pattern
+    iso_matches = re.findall(iso_pattern, text)
+    for match in iso_matches:
+        try:
+            dt = parser.parse(match)
+            return ensure_utc(dt)
+        except (ValueError, TypeError):
+            continue
+
+    # Search for Month pattern
+    month_matches = re.findall(month_pattern, text)
+    for match in month_matches:
+        try:
+            # Replace 'at' to help parser if needed, though dateutil is usually smart
+            clean_match = match.replace(" at ", " ")
+            dt = parser.parse(clean_match)
+            return ensure_utc(dt)
+        except (ValueError, TypeError):
+            continue
+
+    # 3. Time only pattern: "12:00 UTC" or "12:00 (UTC)"
+    # Context: "Trading starts: 12:00 UTC"
+    # We assume the date is the same as publish_time
+    time_pattern = r"(\d{1,2}:\d{2})\s*\(?UTC\)?"
+    time_matches = re.findall(time_pattern, text)
+    if time_matches:
+        # Check if "trading" or "launch" or "list" is near?
+        # For now, just take the first one found, assuming it's relevant if present in announcement body.
+        # But this is risky if there are other times.
+        # Let's try to combine with publish date.
+        for match in time_matches:
+            try:
+                t = parser.parse(match).time()
+                dt = datetime.combine(publish_time.date(), t)
+                return ensure_utc(dt)
+            except (ValueError, TypeError):
+                continue
+
+    return None

@@ -210,4 +210,45 @@ if __name__ == "__main__":
             result = compute_micro_highs([], start, start + timedelta(minutes=60))
             self.assertIn("no candles in window", result.notes)
 
+        def test_90m_window(self):
+            start = datetime(2024, 1, 1, 0, 0)
+            # Create 100 candles.
+            # Index 90 corresponds to start + 90 min.
+            # Close price = 100 + i.
+            candles = [
+                Candle(timestamp=start + timedelta(minutes=i), close=100 + i)
+                for i in range(100)
+            ]
+            # Window end is start + 90 min. Candle at i=90 has timestamp start + 90.
+            # compute_micro_highs uses <= window_end.
+            # So candle at 90 min is included. Its close is 190.
+            result = compute_micro_highs(candles, start, start + timedelta(minutes=90))
+            self.assertEqual(result.max_price_2_close, 190.0)
+
+        def test_drill_down(self):
+            # Verify that we pick the max 1m close within the 3m bucket, not just the 3m close
+            start = datetime(2024, 1, 1, 0, 0)
+            # 3 candles for the first bucket
+            c1 = Candle(timestamp=start, close=100)
+            c2 = Candle(timestamp=start + timedelta(minutes=1), close=105) # Peak
+            c3 = Candle(timestamp=start + timedelta(minutes=2), close=102) # 3m close is 102
+
+            # Next bucket (to confirm local max)
+            c4 = Candle(timestamp=start + timedelta(minutes=3), close=90)
+            c5 = Candle(timestamp=start + timedelta(minutes=4), close=90)
+            c6 = Candle(timestamp=start + timedelta(minutes=5), close=90)
+
+            # Previous bucket (to confirm local max)
+            c0_1 = Candle(timestamp=start - timedelta(minutes=3), close=90)
+
+            candles = [c0_1, c1, c2, c3, c4, c5, c6]
+            # Need lookahead to confirm pullback?
+            # c4, c5, c6 are lower, so pullback should trigger
+
+            result = compute_micro_highs(candles, start - timedelta(minutes=3), start + timedelta(minutes=10))
+
+            # The peak should be 105 (c2), not 102 (c3)
+            self.assertEqual(result.max_price_1_close, 105.0)
+            self.assertEqual(result.max_price_1_time, c2.timestamp)
+
     unittest.main()
