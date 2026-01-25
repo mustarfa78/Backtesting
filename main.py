@@ -459,7 +459,7 @@ def main() -> None:
                     "listing_type": announcement.listing_type_guess,
                     "market_type": announcement.market_type,
                     "announcement_datetime_utc": _format_dt(announcement.published_at_utc),
-                    "launch_datetime_utc": _format_dt(announcement.launch_at_utc),
+                    "launch_datetime_utc": _format_dt(launch_time),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
                     "ma5_close_price_at_minus_1m": f"{ma5:.6f}" if ma5 else "",
                     "max_price_1_close": f"{micro_result.max_price_1_close:.6f}"
