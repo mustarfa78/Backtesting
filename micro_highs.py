@@ -8,6 +8,15 @@ from mexc import Candle
 
 
 @dataclass(frozen=True)
+class LaunchMetricsResult:
+    launch_max_price: Optional[float]
+    launch_max_time: Optional[datetime]
+    launch_min_price: Optional[float]
+    launch_min_time: Optional[datetime]
+    notes: List[str]
+
+
+@dataclass(frozen=True)
 class MicroHighResult:
     max_price_1_close: Optional[float]
     max_price_1_time: Optional[datetime]
@@ -189,6 +198,71 @@ def compute_micro_highs(
         lowest_after_2_close,
         lowest_after_2_time,
         notes,
+    )
+
+
+def compute_launch_metrics(
+    candles: List[Candle],
+    launch_time: datetime,
+) -> LaunchMetricsResult:
+    window_end = launch_time + timedelta(minutes=90)
+    filtered = [c for c in candles if launch_time <= c.timestamp <= window_end]
+    filtered.sort(key=lambda c: c.timestamp)
+
+    notes = []
+    if not filtered:
+        notes.append("no candles in launch window")
+        return LaunchMetricsResult(None, None, None, None, notes)
+
+    # Group into 3-minute buckets
+    buckets = {}
+    for candle in filtered:
+        bucket_start = _floor_to_3m(candle.timestamp)
+        buckets.setdefault(bucket_start, []).append(candle)
+
+    # Find bucket with highest close and lowest close
+    # Bucket close is the close of the last candle in the bucket
+    max_bucket_close = -1.0
+    max_bucket_start = None
+
+    min_bucket_close = float('inf')
+    min_bucket_start = None
+
+    for start in sorted(buckets.keys()):
+        bucket_candles = sorted(buckets[start], key=lambda c: c.timestamp)
+        if not bucket_candles:
+            continue
+        close3 = bucket_candles[-1].close
+
+        if close3 > max_bucket_close:
+            max_bucket_close = close3
+            max_bucket_start = start
+
+        if close3 < min_bucket_close:
+            min_bucket_close = close3
+            min_bucket_start = start
+
+    # Drill down to 1-minute close and time for the determined buckets
+    max_res_price = None
+    max_res_time = None
+    if max_bucket_start:
+        c = sorted(buckets[max_bucket_start], key=lambda c: c.timestamp)[-1]
+        max_res_price = c.close
+        max_res_time = c.timestamp
+
+    min_res_price = None
+    min_res_time = None
+    if min_bucket_start:
+        c = sorted(buckets[min_bucket_start], key=lambda c: c.timestamp)[-1]
+        min_res_price = c.close
+        min_res_time = c.timestamp
+
+    return LaunchMetricsResult(
+        max_res_price,
+        max_res_time,
+        min_res_price,
+        min_res_time,
+        notes
     )
 
 

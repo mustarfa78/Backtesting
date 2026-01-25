@@ -23,7 +23,8 @@ from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PC
 from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
-from micro_highs import compute_micro_highs
+from micro_highs import compute_micro_highs, compute_launch_metrics
+from adapters.launch_utils import resolve_launch_time
 
 
 LOGGER = logging.getLogger(__name__)
@@ -407,6 +408,22 @@ def main() -> None:
                     continue
                 qualified += 1
 
+                # Launch Time Analysis
+                launch_time = resolve_launch_time(announcement, session)
+                launch_metrics = None
+
+                # Check if we have a distinct launch time (ignoring small diffs < 1 min)
+                # Note: resolve_launch_time returns published_at_utc if not found.
+                if abs((launch_time - announcement.published_at_utc).total_seconds()) > 60:
+                    launch_window_end = launch_time + timedelta(minutes=90)
+                    # Fetch candles for launch window
+                    # We assume symbol is valid and trading exists as checked before
+                    try:
+                        launch_candles = mexc.fetch_klines(symbol, launch_time, launch_window_end)
+                        launch_metrics = compute_launch_metrics(launch_candles, launch_time)
+                    except Exception as exc:
+                        LOGGER.warning("Failed to fetch launch candles for %s: %s", ticker, exc)
+
                 window_start = at_time - timedelta(minutes=10)
                 window_end = at_time + timedelta(minutes=60)
                 candles = mexc.fetch_klines(symbol, window_start, window_end)
@@ -461,8 +478,12 @@ def main() -> None:
                     if micro_result.lowest_after_2_close
                     else "",
                     "lowest_after_2_time_utc": _format_dt(micro_result.lowest_after_2_time),
+                    "launch_max_price": f"{launch_metrics.launch_max_price:.6f}" if launch_metrics and launch_metrics.launch_max_price else "",
+                    "launch_max_time_utc": _format_dt(launch_metrics.launch_max_time) if launch_metrics else "",
+                    "launch_min_price": f"{launch_metrics.launch_min_price:.6f}" if launch_metrics and launch_metrics.launch_min_price else "",
+                    "launch_min_time_utc": _format_dt(launch_metrics.launch_min_time) if launch_metrics else "",
                     "source_url": announcement.url,
-                    "notes": "; ".join(notes),
+                    "notes": "; ".join(notes + (launch_metrics.notes if launch_metrics else [])),
                 }
                 rows.append(row)
                 per_source_rows[announcement.source_exchange] = (
@@ -536,6 +557,10 @@ def main() -> None:
         "max_price_2_time_utc",
         "lowest_after_2_close",
         "lowest_after_2_time_utc",
+        "launch_max_price",
+        "launch_max_time_utc",
+        "launch_min_price",
+        "launch_min_time_utc",
         "source_url",
         "notes",
     ]
