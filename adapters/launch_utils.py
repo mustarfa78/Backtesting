@@ -24,6 +24,9 @@ BITGET_COMMA_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}),\s+(\d{1
 # Bybit Pattern (Title - No 'at', AM/PM, Short Months): Jan 11, 2026 8:00AM UTC
 BYBIT_TITLE_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s+(\d{1,2}:\d{2}(?:AM|PM)?)\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 
+# Aggressive Fallback: ISO with T (2026-01-23T11:45:00)
+ISO_T_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})", re.IGNORECASE)
+
 # 2026-01-23 11:45 (UTC)
 ISO_UTC_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 # January 23, 2026 11:45 (UTC) or Jan 23, 2026 at 11:45 UTC or 12:00PM UTC
@@ -59,8 +62,8 @@ def fetch_full_body(session, url: str) -> str:
                 if not article:
                      LOGGER.warning("Binance API returned no data for %s", url)
                      return ""
-                title = article.get("title", "")
-                body = article.get("body", "")
+                title = article.get("title") or ""
+                body = article.get("body") or ""
                 # Concatenate title and body
                 return f"{title}\n\n{body}"
             except Exception as e:
@@ -164,6 +167,16 @@ def _extract_date_from_text(text: str) -> Optional[datetime]:
         except Exception:
             continue
 
+    # Priority 4: ISO T Pattern
+    match = ISO_T_PATTERN.search(text)
+    if match:
+        try:
+            dt_str = match.group(1)
+            dt = parser.parse(dt_str)
+            return ensure_utc(dt)
+        except Exception:
+            pass
+
     return None
 
 def resolve_launch_time(announcement: Announcement, session) -> Optional[datetime]:
@@ -188,4 +201,5 @@ def resolve_launch_time(announcement: Announcement, session) -> Optional[datetim
         if launch_dt:
             return launch_dt
 
+    LOGGER.info("Launch extraction failed for %s. Preview Title: '%s' Body len: %d", announcement.url, announcement.title, len(full_text) if full_text else 0)
     return None
