@@ -14,6 +14,16 @@ from adapters.common import Announcement, ensure_utc
 LOGGER = logging.getLogger(__name__)
 
 # Regex patterns
+
+# XT Pattern (Time on Date): 10:00 (UTC) on January 22, 2026
+XT_TIME_ON_DATE_PATTERN = re.compile(r"(\d{1,2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?\s+on\s+([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})", re.IGNORECASE)
+
+# Bitget Pattern (Comma after Year): January 22, 2026, 12:00 (UTC)
+BITGET_COMMA_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}),\s+(\d{1,2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
+
+# Bybit Pattern (Title - No 'at', AM/PM, Short Months): Jan 11, 2026 8:00AM UTC
+BYBIT_TITLE_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s+(\d{1,2}:\d{2}(?:AM|PM)?)\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
+
 # 2026-01-23 11:45 (UTC)
 ISO_UTC_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 # January 23, 2026 11:45 (UTC) or Jan 23, 2026 at 11:45 UTC or 12:00PM UTC
@@ -87,6 +97,41 @@ def fetch_full_body(session, url: str) -> str:
 def _extract_date_from_text(text: str) -> Optional[datetime]:
     if not text:
         return None
+
+    # Priority 0: Specific targeted patterns
+
+    # XT Pattern: Time on Date
+    for match in XT_TIME_ON_DATE_PATTERN.finditer(text):
+        try:
+            time_str = match.group(1)
+            date_str = match.group(2)
+            dt_str = f"{date_str} {time_str}"
+            dt = parser.parse(dt_str)
+            return ensure_utc(dt)
+        except Exception:
+            continue
+
+    # Bitget Pattern: Comma after Year
+    for match in BITGET_COMMA_PATTERN.finditer(text):
+        try:
+            date_str = match.group(1)
+            time_str = match.group(2)
+            dt_str = f"{date_str} {time_str}"
+            dt = parser.parse(dt_str)
+            return ensure_utc(dt)
+        except Exception:
+            continue
+
+    # Bybit Pattern: Title w/ AM/PM
+    for match in BYBIT_TITLE_PATTERN.finditer(text):
+        try:
+            date_str = match.group(1)
+            time_str = match.group(2)
+            dt_str = f"{date_str} {time_str}"
+            dt = parser.parse(dt_str)
+            return ensure_utc(dt)
+        except Exception:
+            continue
 
     # Priority 1: ISO pattern
     match = ISO_UTC_PATTERN.search(text)
