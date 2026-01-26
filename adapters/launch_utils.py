@@ -15,6 +15,9 @@ LOGGER = logging.getLogger(__name__)
 
 # Regex patterns
 
+# New "Contextual" Regex for "Listing Time" labels found in bodies
+LISTING_TIME_PATTERN = re.compile(r"(?:Listing|Trading)\s+Time\s*[:-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s*(?:(\s*)?UTC(?:\s*))?", re.IGNORECASE)
+
 # XT Pattern (Time on Date): 10:00 (UTC) on January 22, 2026
 XT_TIME_ON_DATE_PATTERN = re.compile(r"(\d{1,2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?\s+on\s+([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})", re.IGNORECASE)
 
@@ -102,6 +105,16 @@ def _extract_date_from_text(text: str) -> Optional[datetime]:
         return None
 
     # Priority 0: Specific targeted patterns
+
+    # New Contextual Pattern: Listing Time
+    for match in LISTING_TIME_PATTERN.finditer(text):
+        try:
+            dt_str = match.group(1)
+            # Remove any trailing "UTC" if caught in the group (though regex separates it)
+            dt = parser.parse(dt_str)
+            return ensure_utc(dt)
+        except Exception:
+            continue
 
     # XT Pattern: Time on Date
     for match in XT_TIME_ON_DATE_PATTERN.finditer(text):
