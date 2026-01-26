@@ -39,7 +39,11 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             params["type"] = selected_type
         if selected_tag:
             params["tag"] = selected_tag
-        response = session.get(url, params=params, timeout=20)
+        headers = {
+            "Referer": "https://announcements.bybit.com/",
+            "Origin": "https://announcements.bybit.com",
+        }
+        response = session.get(url, params=params, headers=headers, timeout=20)
         LOGGER.info("Bybit request url=%s params=%s", url, params)
         if response.status_code in (403, 451) or response.status_code >= 500:
             LOGGER.warning("Bybit response status=%s blocked_or_error", response.status_code)

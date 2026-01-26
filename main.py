@@ -19,6 +19,7 @@ from adapters import (
     fetch_xt,
 )
 from adapters.common import Announcement, SPOT_LISTING_KEYWORDS, futures_keyword_match
+from adapters.launch_utils import resolve_launch_time
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
 from screening_utils import get_session
 from marketcap import resolve_market_cap
@@ -359,6 +360,10 @@ def main() -> None:
                 per_source_tickers[announcement.source_exchange] = (
                     per_source_tickers.get(announcement.source_exchange, 0) + 1
                 )
+
+            resolved_launch_dt = None
+            has_tried_resolving = False
+
             for ticker in announcement.tickers:
                 if len(rows) >= args.target:
                     break
@@ -407,6 +412,14 @@ def main() -> None:
                     continue
                 qualified += 1
 
+                if not has_tried_resolving:
+                    resolved_launch_dt = resolve_launch_time(announcement, session)
+                    has_tried_resolving = True
+                    if resolved_launch_dt:
+                        LOGGER.info("LAUNCH_FOUND: [%s] [%s] source=[%s]", ticker, resolved_launch_dt, announcement.url)
+                    else:
+                        LOGGER.info("LAUNCH_NOT_FOUND: [%s] source=[%s]", ticker, announcement.url)
+
                 window_start = at_time - timedelta(minutes=10)
                 window_end = at_time + timedelta(minutes=60)
                 candles = mexc.fetch_klines(symbol, window_start, window_end)
@@ -442,7 +455,7 @@ def main() -> None:
                     "listing_type": announcement.listing_type_guess,
                     "market_type": announcement.market_type,
                     "announcement_datetime_utc": _format_dt(announcement.published_at_utc),
-                    "launch_datetime_utc": _format_dt(announcement.launch_at_utc),
+                    "launch_datetime_utc": _format_dt(resolved_launch_dt),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
                     "ma5_close_price_at_minus_1m": f"{ma5:.6f}" if ma5 else "",
                     "max_price_1_close": f"{micro_result.max_price_1_close:.6f}"
