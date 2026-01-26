@@ -219,6 +219,13 @@ def get_session(use_cache: bool = True, clear_cache: bool = False) -> requests.S
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://www.google.com/",
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-User": "?1",
+        "Sec-Fetch-Dest": "document",
     })
     return session
 

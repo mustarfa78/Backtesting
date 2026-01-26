@@ -25,7 +25,8 @@ XT_TIME_ON_DATE_PATTERN = re.compile(r"(\d{1,2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?
 BITGET_COMMA_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}),\s+(\d{1,2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 
 # Bybit Pattern (Title - No 'at', AM/PM, Short Months): Jan 11, 2026 8:00AM UTC
-BYBIT_TITLE_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s+(\d{1,2}:\d{2}(?:AM|PM)?)\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
+# Allow optional comma between date and time (e.g. Jan 11, 2026, 8:00AM)
+BYBIT_TITLE_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}),?\s+(\d{1,2}:\d{2}(?:AM|PM)?)\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 
 # Aggressive Fallback: ISO with T (2026-01-23T11:45:00)
 ISO_T_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})", re.IGNORECASE)
