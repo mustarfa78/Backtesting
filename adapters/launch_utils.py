@@ -15,11 +15,11 @@ LOGGER = logging.getLogger(__name__)
 
 # Regex patterns
 # 2026-01-23 11:45 (UTC)
-ISO_UTC_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*\(?UTC\)?", re.IGNORECASE)
-# January 23, 2026 11:45 (UTC) or Jan 23, 2026 at 11:45 UTC
-ENGLISH_UTC_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s+\d{1,2}:\d{2}(?::\d{2})?)\s*\(?UTC\)?", re.IGNORECASE)
+ISO_UTC_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
+# January 23, 2026 11:45 (UTC) or Jan 23, 2026 at 11:45 UTC or 12:00PM UTC
+ENGLISH_UTC_PATTERN = re.compile(r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 # 13:00 on January 22, 2026 (UTC)
-TIME_ON_DATE_PATTERN = re.compile(r"(\d{1,2}:\d{2}(?::\d{2})?)\s+(?:on\s+)?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s*\(?UTC\)?", re.IGNORECASE)
+TIME_ON_DATE_PATTERN = re.compile(r"(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s+(?:on\s+)?([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s*(?:\(\s*)?UTC(?:\s*\))?", re.IGNORECASE)
 
 def fetch_full_body(session, url: str) -> str:
     """
