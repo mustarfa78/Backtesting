@@ -24,6 +24,7 @@ from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
+from launch_util import resolve_launch_time
 
 
 LOGGER = logging.getLogger(__name__)
@@ -430,6 +431,13 @@ def main() -> None:
                     lookahead_bars=LOOKAHEAD_BARS,
                     min_pullback_pct=MIN_PULLBACK_PCT,
                 )
+
+                # Search from 24h before publication to catch "already listed" cases or slightly earlier trading starts
+                search_start = None
+                if announcement.published_at_utc:
+                    search_start = announcement.published_at_utc - timedelta(days=1)
+                launch_time = resolve_launch_time(session, announcement.source_exchange, ticker, search_start_time=search_start)
+
                 notes = []
                 if mc_note:
                     notes.append(mc_note)
@@ -442,7 +450,7 @@ def main() -> None:
                     "listing_type": announcement.listing_type_guess,
                     "market_type": announcement.market_type,
                     "announcement_datetime_utc": _format_dt(announcement.published_at_utc),
-                    "launch_datetime_utc": _format_dt(announcement.launch_at_utc),
+                    "launch_datetime_utc": _format_dt(launch_time) if launch_time else _format_dt(announcement.launch_at_utc),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
                     "ma5_close_price_at_minus_1m": f"{ma5:.6f}" if ma5 else "",
                     "max_price_1_close": f"{micro_result.max_price_1_close:.6f}"
