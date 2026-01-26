@@ -19,6 +19,7 @@ from adapters import (
     fetch_xt,
 )
 from adapters.common import Announcement, SPOT_LISTING_KEYWORDS, futures_keyword_match
+from adapters.launch_utils import extract_launch_time
 from config import DEFAULT_DAYS, DEFAULT_TARGET, LOOKAHEAD_BARS, MIN_PULLBACK_PCT
 from screening_utils import get_session
 from marketcap import resolve_market_cap
@@ -406,6 +407,25 @@ def main() -> None:
                 if not symbol:
                     continue
                 qualified += 1
+
+                if announcement.launch_at_utc is None:
+                    announcement = Announcement(
+                        source_exchange=announcement.source_exchange,
+                        title=announcement.title,
+                        published_at_utc=announcement.published_at_utc,
+                        launch_at_utc=extract_launch_time(
+                            session,
+                            announcement.source_exchange,
+                            ticker,
+                            announcement.market_type,
+                            announcement.published_at_utc,
+                        ),
+                        url=announcement.url,
+                        listing_type_guess=announcement.listing_type_guess,
+                        market_type=announcement.market_type,
+                        tickers=announcement.tickers,
+                        body=announcement.body,
+                    )
 
                 window_start = at_time - timedelta(minutes=10)
                 window_end = at_time + timedelta(minutes=60)
