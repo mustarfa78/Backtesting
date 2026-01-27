@@ -139,6 +139,9 @@ def _fetch_first_candle_gate(session, ticker: str, start_ts: int) -> Optional[da
 
 
 def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[datetime]:
+    end_ts_ms = (start_ts + 48 * 3600) * 1000 # 48h window
+    valid_range_ms = (start_ts + 7 * 86400) * 1000 # 7 day validation
+
     # Try Futures (Mix) first
     try:
         url = "https://api.bitget.com/api/v2/mix/market/candles"
@@ -146,19 +149,21 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             "symbol": f"{ticker}USDT",
             "granularity": "1m",
             "startTime": start_ts * 1000,
-            "endTime": (start_ts + 7 * 86400) * 1000,
-            "limit": 1000, # Increased limit to catch data in range
+            "endTime": end_ts_ms,
+            "limit": 1000,
             "productType": "usdt-futures",
         }
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "00000" and data.get("data"):
-                candles = data["data"]
-                if candles:
-                    # Bitget returns DESC order (newest first).
-                    # We want the oldest in this batch (which is closest to start_ts).
-                    ts = int(candles[-1][0])
+                # Sort ascending
+                sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
+                if sorted_candles:
+                    ts = int(sorted_candles[0][0])
+                    if ts > valid_range_ms:
+                        LOGGER.debug("Bitget Futures returned recent data instead of history for %s", ticker)
+                        return None
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Futures check failed for %s: %s", ticker, e)
@@ -170,16 +175,19 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             "symbol": f"{ticker}USDT",
             "granularity": "1min",
             "startTime": start_ts * 1000,
-            "endTime": (start_ts + 7 * 86400) * 1000,
+            "endTime": end_ts_ms,
             "limit": 1000,
         }
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "00000" and data.get("data"):
-                candles = data["data"]
-                if candles:
-                    ts = int(candles[-1][0])
+                sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
+                if sorted_candles:
+                    ts = int(sorted_candles[0][0])
+                    if ts > valid_range_ms:
+                        LOGGER.debug("Bitget Spot returned recent data instead of history for %s", ticker)
+                        return None
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Spot check failed for %s: %s", ticker, e)
@@ -187,8 +195,7 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
     return None
 
 def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[datetime]:
-    # XT returns mixed results or latest if parameters aren't perfect.
-    # Logic: Get a batch starting from start_ts and find min timestamp.
+    valid_range_ms = (start_ts + 7 * 86400) * 1000
 
     # Try Futures first
     try:
@@ -202,20 +209,16 @@ def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[date
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
-            # Structure: { "result": [ { "t": 123... }, ... ] }
-            # Or sometimes list directly? XT documentation varies.
-            # Based on curl tests: {"result": [{"t": ...}]}
             res = data.get("result")
             if res and isinstance(res, list):
-                # Find min t
-                min_t = None
-                for item in res:
-                    t = item.get("t")
-                    if t:
-                        if min_t is None or t < min_t:
-                            min_t = t
-                if min_t:
-                    return datetime.fromtimestamp(min_t / 1000, tz=timezone.utc)
+                # Sort ascending by t
+                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
+                if sorted_res:
+                    first_t = sorted_res[0].get("t")
+                    if first_t and first_t <= valid_range_ms:
+                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
+                    else:
+                         LOGGER.debug("XT Futures returned recent data instead of history for %s", ticker)
     except Exception as e:
         LOGGER.debug("XT Futures check failed for %s: %s", ticker, e)
 
@@ -231,17 +234,15 @@ def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[date
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
-            # Structure: { "result": [ { "t": 123... }, ... ] }
             res = data.get("result")
             if res and isinstance(res, list):
-                min_t = None
-                for item in res:
-                    t = item.get("t")
-                    if t:
-                        if min_t is None or t < min_t:
-                            min_t = t
-                if min_t:
-                    return datetime.fromtimestamp(min_t / 1000, tz=timezone.utc)
+                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
+                if sorted_res:
+                    first_t = sorted_res[0].get("t")
+                    if first_t and first_t <= valid_range_ms:
+                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
+                    else:
+                         LOGGER.debug("XT Spot returned recent data instead of history for %s", ticker)
     except Exception as e:
         LOGGER.debug("XT Spot check failed for %s: %s", ticker, e)
 
