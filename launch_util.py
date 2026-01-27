@@ -9,6 +9,96 @@ import requests
 LOGGER = logging.getLogger(__name__)
 
 
+def _log_kline_attempt(
+    exchange: str,
+    symbol: str,
+    window_start_ms: int,
+    window_end_ms: int,
+    candles: list[int],
+    filtered_any: bool,
+) -> None:
+    if candles:
+        LOGGER.debug(
+            "launch_util: %s %s window %s-%s candles=%s min_ts=%s max_ts=%s filtered>=start=%s",
+            exchange,
+            symbol,
+            window_start_ms,
+            window_end_ms,
+            len(candles),
+            min(candles),
+            max(candles),
+            filtered_any,
+        )
+    else:
+        LOGGER.debug(
+            "launch_util: %s %s window %s-%s candles=0 filtered>=start=%s",
+            exchange,
+            symbol,
+            window_start_ms,
+            window_end_ms,
+            filtered_any,
+        )
+
+
+def find_first_trade_time(
+    fetch_klines_fn,
+    start_ts_ms: int,
+    interval_ms: int,
+    max_lookahead_ms: int = 7 * 24 * 60 * 60 * 1000,
+    limit: int = 1000,
+    exchange: str = "",
+    symbol: str = "",
+) -> Optional[datetime]:
+    now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    max_window_ms = min(16 * 60 * 60 * 1000, limit * interval_ms)
+    window_ms = min(2 * 60 * 60 * 1000, max_window_ms)
+    search_end_ms = start_ts_ms + max_lookahead_ms
+    cursor_ms = start_ts_ms
+
+    while cursor_ms < search_end_ms:
+        window_end_ms = min(cursor_ms + window_ms, search_end_ms)
+        candles = fetch_klines_fn(cursor_ms, window_end_ms, limit) or []
+        candles = [int(ts) for ts in candles if ts is not None]
+        filtered = [ts for ts in candles if ts >= start_ts_ms - interval_ms]
+
+        if candles:
+            max_ts = max(candles)
+            if max_ts > window_end_ms + interval_ms * 2:
+                LOGGER.debug(
+                    "launch_util: %s %s endTime ignored (window_end=%s max_ts=%s now=%s)",
+                    exchange,
+                    symbol,
+                    window_end_ms,
+                    max_ts,
+                    now_ms,
+                )
+                return None
+
+        _log_kline_attempt(
+            exchange,
+            symbol,
+            cursor_ms,
+            window_end_ms,
+            candles,
+            bool(filtered),
+        )
+
+        if filtered:
+            first_ts = min(filtered)
+            LOGGER.info("launch_util: LAUNCH_FOUND %s %s %s", exchange, symbol, first_ts)
+            return datetime.fromtimestamp(first_ts / 1000, tz=timezone.utc)
+
+        if not candles:
+            cursor_ms = window_end_ms
+        else:
+            cursor_ms = window_end_ms
+        if window_ms < max_window_ms:
+            window_ms = min(window_ms * 2, max_window_ms)
+
+    LOGGER.info("launch_util: LAUNCH_NOT_FOUND %s %s", exchange, symbol)
+    return None
+
+
 def _fetch_first_candle_binance(session, ticker: str, start_ts: int) -> Optional[datetime]:
     # Try Futures first
     try:
@@ -50,45 +140,49 @@ def _fetch_first_candle_binance(session, ticker: str, start_ts: int) -> Optional
 
 
 def _fetch_first_candle_bybit(session, ticker: str, start_ts: int) -> Optional[datetime]:
+    def _fetch_bybit_klines(category: str):
+        def _fetch(start_ms: int, end_ms: int, limit: int) -> list[int]:
+            url = "https://api.bybit.com/v5/market/kline"
+            params = {
+                "category": category,
+                "symbol": f"{ticker}USDT",
+                "interval": "1",
+                "start": start_ms,
+                "end": end_ms,
+                "limit": limit,
+            }
+            resp = session.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            candles = data.get("result", {}).get("list") if data.get("retCode") == 0 else []
+            return [int(item[0]) for item in candles] if candles else []
+
+        return _fetch
+
+    start_ts_ms = start_ts * 1000
+    interval_ms = 60 * 1000
     # Try Futures (Linear) first
     try:
-        url = "https://api.bybit.com/v5/market/kline"
-        params = {
-            "category": "linear",
-            "symbol": f"{ticker}USDT",
-            "interval": "1",
-            "start": start_ts * 1000,
-            "limit": 1,
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("retCode") == 0 and data.get("result", {}).get("list"):
-                candles = data["result"]["list"]
-                if candles:
-                    ts = int(candles[-1][0])
-                    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return find_first_trade_time(
+            _fetch_bybit_klines("linear"),
+            start_ts_ms,
+            interval_ms,
+            exchange="Bybit",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("Bybit Futures check failed for %s: %s", ticker, e)
 
     # Fallback to Spot
     try:
-        url = "https://api.bybit.com/v5/market/kline"
-        params = {
-            "category": "spot",
-            "symbol": f"{ticker}USDT",
-            "interval": "1",
-            "start": start_ts * 1000,
-            "limit": 1,
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("retCode") == 0 and data.get("result", {}).get("list"):
-                candles = data["result"]["list"]
-                if candles:
-                    ts = int(candles[-1][0])
-                    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return find_first_trade_time(
+            _fetch_bybit_klines("spot"),
+            start_ts_ms,
+            interval_ms,
+            exchange="Bybit",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("Bybit Spot check failed for %s: %s", ticker, e)
 
@@ -139,110 +233,121 @@ def _fetch_first_candle_gate(session, ticker: str, start_ts: int) -> Optional[da
 
 
 def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[datetime]:
-    end_ts_ms = (start_ts + 48 * 3600) * 1000 # 48h window
-    valid_range_ms = (start_ts + 7 * 86400) * 1000 # 7 day validation
+    def _fetch_bitget_klines(endpoint: str, params: dict):
+        def _fetch(start_ms: int, end_ms: int, limit: int) -> list[int]:
+            payload = dict(params)
+            payload.update({"startTime": start_ms, "endTime": end_ms, "limit": limit})
+            resp = session.get(endpoint, params=payload, timeout=10)
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            if data.get("code") != "00000":
+                return []
+            candles = data.get("data") or []
+            return [int(item[0]) for item in candles] if candles else []
+
+        return _fetch
+
+    start_ts_ms = start_ts * 1000
+    interval_ms = 60 * 1000
 
     # Try Futures (Mix) first
     try:
-        url = "https://api.bitget.com/api/v2/mix/market/candles"
-        params = {
-            "symbol": f"{ticker}USDT",
-            "granularity": "1m",
-            "startTime": start_ts * 1000,
-            "endTime": end_ts_ms,
-            "limit": 1000,
-            "productType": "usdt-futures",
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("code") == "00000" and data.get("data"):
-                # Sort ascending
-                sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
-                if sorted_candles:
-                    ts = int(sorted_candles[0][0])
-                    if ts > valid_range_ms:
-                        LOGGER.debug("Bitget Futures returned recent data instead of history for %s", ticker)
-                        return None
-                    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return find_first_trade_time(
+            _fetch_bitget_klines(
+                "https://api.bitget.com/api/v2/mix/market/candles",
+                {
+                    "symbol": f"{ticker}USDT",
+                    "granularity": "1m",
+                    "productType": "USDT-FUTURES",
+                },
+            ),
+            start_ts_ms,
+            interval_ms,
+            exchange="Bitget",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("Bitget Futures check failed for %s: %s", ticker, e)
 
     # Fallback to Spot
     try:
-        url = "https://api.bitget.com/api/v2/spot/market/candles"
-        params = {
-            "symbol": f"{ticker}USDT",
-            "granularity": "1min",
-            "startTime": start_ts * 1000,
-            "endTime": end_ts_ms,
-            "limit": 1000,
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("code") == "00000" and data.get("data"):
-                sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
-                if sorted_candles:
-                    ts = int(sorted_candles[0][0])
-                    if ts > valid_range_ms:
-                        LOGGER.debug("Bitget Spot returned recent data instead of history for %s", ticker)
-                        return None
-                    return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return find_first_trade_time(
+            _fetch_bitget_klines(
+                "https://api.bitget.com/api/v2/spot/market/candles",
+                {"symbol": f"{ticker}USDT", "granularity": "1min"},
+            ),
+            start_ts_ms,
+            interval_ms,
+            exchange="Bitget",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("Bitget Spot check failed for %s: %s", ticker, e)
 
     return None
 
 def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[datetime]:
-    valid_range_ms = (start_ts + 7 * 86400) * 1000
+    def _fetch_xt_futures(start_ms: int, end_ms: int, limit: int) -> list[int]:
+        url = "https://fapi.xt.com/future/market/v1/public/q/kline"
+        params = {
+            "symbol": f"{ticker.lower()}_usdt",
+            "interval": "1m",
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": limit,
+        }
+        resp = session.get(url, params=params, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        res = data.get("result") or data.get("data")
+        if not isinstance(res, list):
+            return []
+        return [int(item.get("t")) for item in res if item.get("t") is not None]
+
+    def _fetch_xt_spot(start_ms: int, end_ms: int, limit: int) -> list[int]:
+        url = "https://sapi.xt.com/v4/public/kline"
+        params = {
+            "symbol": f"{ticker.lower()}_usdt",
+            "interval": "1m",
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": limit,
+        }
+        resp = session.get(url, params=params, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        res = data.get("result") or data.get("data")
+        if not isinstance(res, list):
+            return []
+        return [int(item.get("t")) for item in res if item.get("t") is not None]
+
+    start_ts_ms = start_ts * 1000
+    interval_ms = 60 * 1000
 
     # Try Futures first
     try:
-        url = "https://fapi.xt.com/future/market/v1/public/kline"
-        params = {
-            "symbol": f"{ticker.lower()}_usdt",
-            "period": "1m",
-            "start_time": start_ts * 1000,
-            "limit": 200
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            res = data.get("result")
-            if res and isinstance(res, list):
-                # Sort ascending by t
-                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
-                if sorted_res:
-                    first_t = sorted_res[0].get("t")
-                    if first_t and first_t <= valid_range_ms:
-                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
-                    else:
-                         LOGGER.debug("XT Futures returned recent data instead of history for %s", ticker)
+        return find_first_trade_time(
+            _fetch_xt_futures,
+            start_ts_ms,
+            interval_ms,
+            exchange="XT",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("XT Futures check failed for %s: %s", ticker, e)
 
     # Fallback to Spot
     try:
-        url = "https://sapi.xt.com/v4/public/kline"
-        params = {
-            "symbol": f"{ticker.lower()}_usdt",
-            "interval": "1m",
-            "startTime": start_ts * 1000,
-            "limit": 200
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            res = data.get("result")
-            if res and isinstance(res, list):
-                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
-                if sorted_res:
-                    first_t = sorted_res[0].get("t")
-                    if first_t and first_t <= valid_range_ms:
-                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
-                    else:
-                         LOGGER.debug("XT Spot returned recent data instead of history for %s", ticker)
+        return find_first_trade_time(
+            _fetch_xt_spot,
+            start_ts_ms,
+            interval_ms,
+            exchange="XT",
+            symbol=ticker,
+        )
     except Exception as e:
         LOGGER.debug("XT Spot check failed for %s: %s", ticker, e)
 
