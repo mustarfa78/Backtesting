@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -139,10 +140,29 @@ def _fetch_first_candle_gate(session, ticker: str, start_ts: int) -> Optional[da
 
 
 def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[datetime]:
-    end_ts_ms = (start_ts + 48 * 3600) * 1000 # 48h window
-    valid_range_ms = (start_ts + 7 * 86400) * 1000 # 7 day validation
+    # Strategy A: Metadata (Direct Hit)
+    try:
+        url = "https://api.bitget.com/api/v2/spot/public/symbols"
+        params = {"symbol": f"{ticker}USDT"}
+        resp = session.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == "00000" and data.get("data"):
+                item = data["data"][0]
+                open_time = item.get("openTime")
+                if open_time and int(open_time) > 0:
+                    dt = datetime.fromtimestamp(int(open_time) / 1000, tz=timezone.utc)
+                    LOGGER.info("launch_util: Found Bitget launch time via Metadata: %s (Direct hit)", dt.isoformat())
+                    return dt
+    except Exception as e:
+        LOGGER.debug("Bitget Metadata check failed for %s: %s", ticker, e)
 
-    # Try Futures (Mix) first
+    # Strategy B: Kline Fallback
+    # Window: start_ts (which is Ann - 24h) to + 5 days.
+    # This covers [Ann - 24h, Ann + 4 days].
+    end_ts_ms = (start_ts + 5 * 86400) * 1000
+
+    # Try Futures (Mix)
     try:
         url = "https://api.bitget.com/api/v2/mix/market/candles"
         params = {
@@ -157,18 +177,14 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
         if resp.status_code == 200:
             data = resp.json()
             if data.get("code") == "00000" and data.get("data"):
-                # Sort ascending
                 sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
                 if sorted_candles:
                     ts = int(sorted_candles[0][0])
-                    if ts > valid_range_ms:
-                        LOGGER.debug("Bitget Futures returned recent data instead of history for %s", ticker)
-                        return None
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Futures check failed for %s: %s", ticker, e)
 
-    # Fallback to Spot
+    # Try Spot
     try:
         url = "https://api.bitget.com/api/v2/spot/market/candles"
         params = {
@@ -185,66 +201,108 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
                 sorted_candles = sorted(data["data"], key=lambda x: int(x[0]))
                 if sorted_candles:
                     ts = int(sorted_candles[0][0])
-                    if ts > valid_range_ms:
-                        LOGGER.debug("Bitget Spot returned recent data instead of history for %s", ticker)
-                        return None
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Spot check failed for %s: %s", ticker, e)
 
     return None
 
+
 def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[datetime]:
-    valid_range_ms = (start_ts + 7 * 86400) * 1000
+    # Valid window: 7 days from start_ts (Ann - 24h + 7 days = Ann + 6 days)
+    limit_ts_ms = (start_ts + 7 * 86400) * 1000
 
-    # Try Futures first
-    try:
-        url = "https://fapi.xt.com/future/market/v1/public/kline"
-        params = {
-            "symbol": f"{ticker.lower()}_usdt",
-            "period": "1m",
-            "start_time": start_ts * 1000,
-            "limit": 200
+    configs = [
+        # Spot V4 (startTime)
+        {
+            "url": "https://sapi.xt.com/v4/public/kline",
+            "params": {
+                "symbol": f"{ticker.lower()}_usdt",
+                "interval": "1m",
+                "startTime": start_ts * 1000,
+                "limit": 10,
+            },
+            "desc": "Spot V4 startTime"
+        },
+        # Spot V4 (start_time)
+        {
+            "url": "https://sapi.xt.com/v4/public/kline",
+            "params": {
+                "symbol": f"{ticker.lower()}_usdt",
+                "interval": "1m",
+                "start_time": start_ts * 1000,
+                "limit": 10,
+            },
+            "desc": "Spot V4 start_time"
+        },
+        # Futures (start_time)
+        {
+            "url": "https://fapi.xt.com/future/market/v1/public/kline",
+            "params": {
+                "symbol": f"{ticker.lower()}_usdt",
+                "period": "1m",
+                "start_time": start_ts * 1000,
+                "limit": 10,
+            },
+            "desc": "Futures start_time"
         }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            res = data.get("result")
-            if res and isinstance(res, list):
-                # Sort ascending by t
-                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
-                if sorted_res:
-                    first_t = sorted_res[0].get("t")
-                    if first_t and first_t <= valid_range_ms:
-                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
-                    else:
-                         LOGGER.debug("XT Futures returned recent data instead of history for %s", ticker)
-    except Exception as e:
-        LOGGER.debug("XT Futures check failed for %s: %s", ticker, e)
+    ]
 
-    # Fallback to Spot
-    try:
-        url = "https://sapi.xt.com/v4/public/kline"
-        params = {
-            "symbol": f"{ticker.lower()}_usdt",
-            "interval": "1m",
-            "startTime": start_ts * 1000,
-            "limit": 200
-        }
-        resp = session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            res = data.get("result")
-            if res and isinstance(res, list):
-                sorted_res = sorted(res, key=lambda x: x.get("t", float("inf")))
-                if sorted_res:
-                    first_t = sorted_res[0].get("t")
-                    if first_t and first_t <= valid_range_ms:
-                        return datetime.fromtimestamp(first_t / 1000, tz=timezone.utc)
+    last_error_body = None
+
+    for i, cfg in enumerate(configs):
+        try:
+            resp = session.get(cfg["url"], params=cfg["params"], timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                # Unified result extraction
+                result_list = data.get("result") or data.get("data")
+
+                # If result is empty, try next config
+                if not result_list or not isinstance(result_list, list):
+                    continue
+
+                # Handle result format variations
+                # Format A (Spot V4): [{"t": 167..., ...}, ...]
+                # Format B (Possible Futures): same or list of lists?
+                # Based on previous code, XT returns list of dicts with 't'.
+
+                # Sort just in case
+                # We need to handle if items are not dicts (just in case)
+                parsed_candles = []
+                for item in result_list:
+                    t_val = None
+                    if isinstance(item, dict):
+                        t_val = item.get("t")
+                    elif isinstance(item, list) and len(item) > 0:
+                        t_val = item[0]
+
+                    if t_val:
+                        parsed_candles.append(int(t_val))
+
+                parsed_candles.sort()
+
+                if parsed_candles:
+                    first_ts = parsed_candles[0]
+                    # Validation
+                    if first_ts < limit_ts_ms:
+                        # Found it!
+                        # LOGGER.info("launch_util: Resolved launch time for %s on XT via %s", ticker, cfg["desc"])
+                        return datetime.fromtimestamp(first_ts / 1000, tz=timezone.utc)
                     else:
-                         LOGGER.debug("XT Spot returned recent data instead of history for %s", ticker)
-    except Exception as e:
-        LOGGER.debug("XT Spot check failed for %s: %s", ticker, e)
+                        # Too far in future/recent.
+                        # This happens if API ignored start_time and gave us "now".
+                        # Try next config.
+                        pass
+            else:
+                last_error_body = resp.text
+                LOGGER.debug("XT attempt %s (%s) failed status=%s", i + 1, cfg["desc"], resp.status_code)
+
+        except Exception as e:
+            LOGGER.debug("XT attempt %s (%s) error: %s", i + 1, cfg["desc"], e)
+
+    if last_error_body:
+        LOGGER.debug("XT all attempts failed. Last error body: %s", last_error_body[:200])
 
     return None
 
