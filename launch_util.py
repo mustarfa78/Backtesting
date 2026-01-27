@@ -66,17 +66,6 @@ def _fetch_first_candle_bybit(session, ticker: str, start_ts: int) -> Optional[d
             if data.get("retCode") == 0 and data.get("result", {}).get("list"):
                 candles = data["result"]["list"]
                 if candles:
-                    # Bybit returns reversed (latest first) by default?
-                    # If we use start, we might get candles starting from there.
-                    # But if limit=1, do we get the first or last in that window?
-                    # "Sort in reverse by startTime".
-                    # So [0] is the *latest* in the batch.
-                    # If batch is [start, start+1m, ...], then [0] is start+N.
-                    # This is tricky with limit=1.
-                    # If I use limit=1, I might get the *latest* candle available > start.
-                    # I should probably use a small limit (e.g. 5) and take the smallest timestamp >= start.
-                    # Actually, if the list is descending, the *last* element [-1] is the oldest.
-                    # So I should take [-1].
                     ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
@@ -157,10 +146,8 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             "symbol": f"{ticker}USDT",
             "granularity": "1m",
             "startTime": start_ts * 1000,
-            # endTime? If not provided, might default to now?
-            # Let's try providing endTime = start + 7 days
             "endTime": (start_ts + 7 * 86400) * 1000,
-            "limit": 1,
+            "limit": 1000, # Increased limit to catch data in range
             "productType": "usdt-futures",
         }
         resp = session.get(url, params=params, timeout=10)
@@ -169,7 +156,9 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "00000" and data.get("data"):
                 candles = data["data"]
                 if candles:
-                    ts = int(candles[0][0])
+                    # Bitget returns DESC order (newest first).
+                    # We want the oldest in this batch (which is closest to start_ts).
+                    ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Futures check failed for %s: %s", ticker, e)
@@ -182,7 +171,7 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             "granularity": "1min",
             "startTime": start_ts * 1000,
             "endTime": (start_ts + 7 * 86400) * 1000,
-            "limit": 1,
+            "limit": 1000,
         }
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
@@ -190,13 +179,73 @@ def _fetch_first_candle_bitget(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "00000" and data.get("data"):
                 candles = data["data"]
                 if candles:
-                    ts = int(candles[0][0])
+                    ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("Bitget Spot check failed for %s: %s", ticker, e)
 
     return None
 
+def _fetch_first_candle_xt(session, ticker: str, start_ts: int) -> Optional[datetime]:
+    # XT returns mixed results or latest if parameters aren't perfect.
+    # Logic: Get a batch starting from start_ts and find min timestamp.
+
+    # Try Futures first
+    try:
+        url = "https://fapi.xt.com/future/market/v1/public/kline"
+        params = {
+            "symbol": f"{ticker.lower()}_usdt",
+            "period": "1m",
+            "start_time": start_ts * 1000,
+            "limit": 200
+        }
+        resp = session.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Structure: { "result": [ { "t": 123... }, ... ] }
+            # Or sometimes list directly? XT documentation varies.
+            # Based on curl tests: {"result": [{"t": ...}]}
+            res = data.get("result")
+            if res and isinstance(res, list):
+                # Find min t
+                min_t = None
+                for item in res:
+                    t = item.get("t")
+                    if t:
+                        if min_t is None or t < min_t:
+                            min_t = t
+                if min_t:
+                    return datetime.fromtimestamp(min_t / 1000, tz=timezone.utc)
+    except Exception as e:
+        LOGGER.debug("XT Futures check failed for %s: %s", ticker, e)
+
+    # Fallback to Spot
+    try:
+        url = "https://sapi.xt.com/v4/public/kline"
+        params = {
+            "symbol": f"{ticker.lower()}_usdt",
+            "interval": "1m",
+            "startTime": start_ts * 1000,
+            "limit": 200
+        }
+        resp = session.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Structure: { "result": [ { "t": 123... }, ... ] }
+            res = data.get("result")
+            if res and isinstance(res, list):
+                min_t = None
+                for item in res:
+                    t = item.get("t")
+                    if t:
+                        if min_t is None or t < min_t:
+                            min_t = t
+                if min_t:
+                    return datetime.fromtimestamp(min_t / 1000, tz=timezone.utc)
+    except Exception as e:
+        LOGGER.debug("XT Spot check failed for %s: %s", ticker, e)
+
+    return None
 
 def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[datetime]:
     # Try Futures first
@@ -206,7 +255,6 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             "symbol": f"{ticker}USDTM",
             "granularity": 1,
             "from": start_ts * 1000,
-            # KuCoin Futures `from` handles start time
         }
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
@@ -214,9 +262,9 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "200000" and data.get("data"):
                 candles = data["data"]
                 if candles:
-                    # KuCoin Futures returns ascending?
-                    # My previous test showed ascending timestamps.
-                    ts = int(candles[0][0])
+                    # KuCoin Futures returns descending (newest first) by default.
+                    # We want the oldest in this batch (which is closest to start_ts).
+                    ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("KuCoin Futures check failed for %s: %s", ticker, e)
@@ -228,7 +276,6 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             "symbol": f"{ticker}-USDT",
             "type": "1min",
             "startAt": start_ts,
-            # "endAt": start_ts + 7 * 86400 # Optional
         }
         resp = session.get(url, params=params, timeout=10)
         if resp.status_code == 200:
@@ -236,8 +283,6 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "200000" and data.get("data"):
                 candles = data["data"]
                 if candles:
-                    # KuCoin Spot returns descending (newest first).
-                    # So the last element is the oldest in the batch.
                     ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts, tz=timezone.utc)
     except Exception as e:
@@ -260,8 +305,6 @@ def _fetch_first_candle_kraken(session, ticker: str, start_ts: int) -> Optional[
                     if key == "last":
                         continue
                     if isinstance(val, list) and val:
-                        # Kraken returns data since `since`.
-                        # First element should be the oldest.
                         ts = int(val[0][0])
                         return datetime.fromtimestamp(ts, tz=timezone.utc)
     except Exception as e:
@@ -307,8 +350,7 @@ def resolve_launch_time(
         elif source_exchange == "KuCoin":
             launch_time = _fetch_first_candle_kucoin(session, ticker, start_ts)
         elif source_exchange == "XT":
-            LOGGER.debug("XT launch time extraction skipped due to API limitations")
-            return None
+            launch_time = _fetch_first_candle_xt(session, ticker, start_ts)
         elif source_exchange == "Kraken":
             launch_time = _fetch_first_candle_kraken(session, ticker, start_ts)
 
