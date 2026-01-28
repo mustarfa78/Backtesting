@@ -56,7 +56,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
 
     page = 1
     while True:
-        LOGGER.info("Fetching Kraken page %s...", page)
+        LOGGER.info("Kraken fetching page %s...", page)
         params = {"per_page": 50, "page": page}
         if category_id:
             params["categories"] = category_id

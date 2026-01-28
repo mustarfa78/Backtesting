@@ -15,7 +15,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     page = 1
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    while page <= 20:
+    while True:
+        if page > 50:
+            break
         LOGGER.info("Fetching XT page %s...", page)
         data = get_json(session, base_url, params={"page": page, "per_page": 50})
         items = data.get("articles", [])
