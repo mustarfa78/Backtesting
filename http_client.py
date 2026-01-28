@@ -11,7 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 LOGGER = logging.getLogger(__name__)
 
 
-def build_session(cache_name: str = "http_cache", expire_seconds: int = 3600) -> requests.Session:
+def build_session(cache_name: str = "http_cache", expire_seconds: int = 10800) -> requests.Session:
     session = requests_cache.CachedSession(
         cache_name=cache_name,
         backend="sqlite",

@@ -24,6 +24,7 @@ from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
+from launch_highlow import compute_launch_highlow
 from launch_util import resolve_launch_time
 
 
@@ -409,7 +410,7 @@ def main() -> None:
                 qualified += 1
 
                 window_start = at_time - timedelta(minutes=10)
-                window_end = at_time + timedelta(minutes=60)
+                window_end = at_time + timedelta(minutes=120)
                 candles = mexc.fetch_klines(symbol, window_start, window_end)
                 if not candles:
                     continue
@@ -437,6 +438,12 @@ def main() -> None:
                 if announcement.published_at_utc:
                     search_start = announcement.published_at_utc - timedelta(days=1)
                 launch_time = resolve_launch_time(session, announcement.source_exchange, ticker, search_start_time=search_start)
+
+                launch_point = announcement.launch_at_utc
+                if not launch_point:
+                    launch_point = announcement.published_at_utc
+
+                launch_res = compute_launch_highlow(candles, launch_point)
 
                 notes = []
                 if mc_note:
@@ -469,6 +476,14 @@ def main() -> None:
                     if micro_result.lowest_after_2_close
                     else "",
                     "lowest_after_2_time_utc": _format_dt(micro_result.lowest_after_2_time),
+                    "launch_high_close": f"{launch_res.highest_close:.6f}" if launch_res.highest_close else "",
+                    "launch_high_time": _format_dt(launch_res.highest_time),
+                    "launch_pullback1_close": f"{launch_res.pullback_1_close:.6f}" if launch_res.pullback_1_close else "",
+                    "launch_pullback1_time": _format_dt(launch_res.pullback_1_time),
+                    "launch_low_close": f"{launch_res.lowest_close:.6f}" if launch_res.lowest_close else "",
+                    "launch_low_time": _format_dt(launch_res.lowest_time),
+                    "launch_pullback2_close": f"{launch_res.pullback_2_close:.6f}" if launch_res.pullback_2_close else "",
+                    "launch_pullback2_time": _format_dt(launch_res.pullback_2_time),
                     "source_url": announcement.url,
                     "notes": "; ".join(notes),
                 }
@@ -544,6 +559,14 @@ def main() -> None:
         "max_price_2_time_utc",
         "lowest_after_2_close",
         "lowest_after_2_time_utc",
+        "launch_high_close",
+        "launch_high_time",
+        "launch_pullback1_close",
+        "launch_pullback1_time",
+        "launch_low_close",
+        "launch_low_time",
+        "launch_pullback2_close",
+        "launch_pullback2_time",
         "source_url",
         "notes",
     ]

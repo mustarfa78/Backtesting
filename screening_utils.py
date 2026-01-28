@@ -202,7 +202,7 @@ def get_session(use_cache: bool = True, clear_cache: bool = False) -> requests.S
         session: requests.Session = requests_cache.CachedSession(
             cache_name="http_cache",
             backend="sqlite",
-            expire_after=3600,
+            expire_after=10800,
         )
         if clear_cache and isinstance(session, requests_cache.CachedSession):
             session.cache.clear()
