@@ -368,9 +368,8 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "200000" and data.get("data"):
                 candles = data["data"]
                 if candles:
-                    # KuCoin Futures returns descending (newest first) by default.
-                    # We want the oldest in this batch (which is closest to start_ts).
-                    ts = int(candles[-1][0])
+                    # KuCoin Futures assumed ascending (oldest first). Use candles[0].
+                    ts = int(candles[0][0])
                     return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
     except Exception as e:
         LOGGER.debug("KuCoin Futures check failed for %s: %s", ticker, e)
@@ -389,6 +388,7 @@ def _fetch_first_candle_kucoin(session, ticker: str, start_ts: int) -> Optional[
             if data.get("code") == "200000" and data.get("data"):
                 candles = data["data"]
                 if candles:
+                    # KuCoin Spot returns descending (newest first). Use candles[-1].
                     ts = int(candles[-1][0])
                     return datetime.fromtimestamp(ts, tz=timezone.utc)
     except Exception as e:
