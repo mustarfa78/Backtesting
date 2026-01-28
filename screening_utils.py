@@ -130,6 +130,8 @@ IGNORE_WORDS = {
     "AUD",
     "GBP",
     "ORDER",
+    "TAG",
+    "WIN",
 }
 
 SEEN_LOCK = threading.Lock()
