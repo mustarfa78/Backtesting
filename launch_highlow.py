@@ -50,13 +50,13 @@ def _build_3m_series(candles: List[Candle]) -> List[CandleBucket]:
 
 
 def compute_launch_highlow(candles: List[Candle], launch_time: datetime) -> LaunchHighLowResult:
-    window_end = launch_time + timedelta(minutes=90)
+    window_end = launch_time + timedelta(minutes=120)
 
-    # Filter candles to range [launch_time, launch_time + 90 minutes]
-    # Assuming inclusive start, inclusive end or exclusive end. Usually inclusive start.
+    # Filter candles to range (launch_time, launch_time + 120 minutes]
+    # Strictly AFTER launch_time
     window_candles = [
         c for c in candles
-        if launch_time <= c.timestamp <= window_end
+        if launch_time < c.timestamp <= window_end
     ]
     window_candles.sort(key=lambda c: c.timestamp)
 
@@ -123,15 +123,11 @@ if __name__ == "__main__":
     class TestLaunchHighLow(unittest.TestCase):
         def test_basic_high_low_pullback(self):
             base_time = datetime(2024, 1, 1, 10, 0)
-            # Create a sequence: goes up, dips, goes down, bounces
-            # 10:00 - 10:10: UP to 100
-            # 10:10 - 10:20: Dip to 90
-            # 10:20 - 10:40: Down to 50
-            # 10:40 - 10:50: Bounce to 70
-
             candles = []
 
             # Up to High at 10:10
+            # Note: base_time is launch time. c.timestamp > base_time.
+            # So 10:00 is excluded.
             for i in range(11):
                 t = base_time + timedelta(minutes=i)
                 price = 60 + i * 4 # 60, 64, ... 100
@@ -158,11 +154,11 @@ if __name__ == "__main__":
                 candles.append(Candle(t, float(price)))
 
             # Verify inputs roughly
-            # High should be 100 at 10:10
-            # Low should be ~50 at 10:40
 
             res = compute_launch_highlow(candles, base_time)
 
+            # Note: 10:00 (60.0) is filtered out because > launch_time.
+            # Max is still 100 at 10:10.
             self.assertEqual(res.highest_close, 100.0)
             self.assertEqual(res.highest_time, base_time + timedelta(minutes=10))
 
@@ -170,21 +166,29 @@ if __name__ == "__main__":
             # Low is at 10:40 (15+25)
             self.assertEqual(res.lowest_time, base_time + timedelta(minutes=40))
 
-            # Pullback 1: Dip after High (10:10).
-            # Candles after 10:10 go down to 90 at 10:15.
-            # 3m buckets after 10:10:
-            # 10:11 (starts 10:09 bucket? No, floor to 3m)
-            # 10:11 is in 10:09 bucket? 11 - (11%3) = 9. Yes.
-            # 10:12 is in 10:12 bucket.
-            # 10:15 is in 10:15 bucket.
-            # The lowest close during the dip is 90 at 10:15.
             self.assertIsNotNone(res.pullback_1_close)
             self.assertLess(res.pullback_1_close, 100.0)
 
-            # Pullback 2: Bounce after Low (10:40).
-            # Candles after 10:40 go up to 70.
             self.assertIsNotNone(res.pullback_2_close)
             self.assertGreater(res.pullback_2_close, 50.0)
+
+        def test_120m_window_inclusion(self):
+            base_time = datetime(2024, 1, 1, 10, 0)
+            candles = []
+            # Candle at 10:00 (launch) -> Should be excluded
+            candles.append(Candle(base_time, 10.0))
+            # Candle at 11:59 (119m) -> Should be included
+            candles.append(Candle(base_time + timedelta(minutes=119), 20.0))
+            # Candle at 12:00 (120m) -> Should be included
+            candles.append(Candle(base_time + timedelta(minutes=120), 30.0))
+            # Candle at 12:01 (121m) -> Should be excluded
+            candles.append(Candle(base_time + timedelta(minutes=121), 40.0))
+
+            res = compute_launch_highlow(candles, base_time)
+
+            self.assertEqual(res.highest_close, 30.0)
+            self.assertEqual(res.highest_time, base_time + timedelta(minutes=120))
+            self.assertEqual(res.lowest_close, 20.0)
 
         def test_empty_window(self):
             base_time = datetime(2024, 1, 1, 10, 0)

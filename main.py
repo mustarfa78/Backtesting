@@ -24,7 +24,7 @@ from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
-from launch_highlow import compute_launch_highlow
+from launch_highlow import compute_launch_highlow, LaunchHighLowResult
 from launch_util import resolve_launch_time
 
 
@@ -439,11 +439,21 @@ def main() -> None:
                     search_start = announcement.published_at_utc - timedelta(days=1)
                 launch_time = resolve_launch_time(session, announcement.source_exchange, ticker, search_start_time=search_start)
 
-                launch_point = announcement.launch_at_utc
-                if not launch_point:
-                    launch_point = announcement.published_at_utc
+                effective_launch_time = launch_time
+                if not effective_launch_time:
+                    effective_launch_time = announcement.launch_at_utc
 
-                launch_res = compute_launch_highlow(candles, launch_point)
+                launch_res = LaunchHighLowResult(None, None, None, None, None, None, None, None)
+                ma5_launch = None
+                if effective_launch_time:
+                    # Fetch fresh candles around launch time to ensure coverage and data freshness
+                    # Window: -10m (for MA5) to +120m (for high/low analysis)
+                    l_start = effective_launch_time - timedelta(minutes=10)
+                    l_end = effective_launch_time + timedelta(minutes=120)
+                    launch_candles = mexc.fetch_klines(symbol, l_start, l_end)
+                    if launch_candles:
+                        ma5_launch = _compute_ma5_at_minus_1m(launch_candles, effective_launch_time)
+                        launch_res = compute_launch_highlow(launch_candles, effective_launch_time)
 
                 notes = []
                 if mc_note:
@@ -460,6 +470,7 @@ def main() -> None:
                     "launch_datetime_utc": _format_dt(launch_time) if launch_time else _format_dt(announcement.launch_at_utc),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
                     "ma5_close_price_at_minus_1m": f"{ma5:.6f}" if ma5 else "",
+                    "ma5_close_price_at_minus_1m_Launch": f"{ma5_launch:.6f}" if ma5_launch else "",
                     "max_price_1_close": f"{micro_result.max_price_1_close:.6f}"
                     if micro_result.max_price_1_close
                     else "",
@@ -551,6 +562,7 @@ def main() -> None:
         "launch_datetime_utc",
         "market_cap_usd_at_minus_1m",
         "ma5_close_price_at_minus_1m",
+        "ma5_close_price_at_minus_1m_Launch",
         "max_price_1_close",
         "max_price_1_time_utc",
         "lowest_after_1_close",

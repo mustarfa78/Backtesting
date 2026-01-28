@@ -1,0 +1,279 @@
+2026-01-28 09:28:39,346 DEBUG requests_cache.backends Initializing backend: sqlite http_cache
+2026-01-28 09:28:39,346 DEBUG requests_cache.backends.base Initialized SQLiteDict with serializer: SerializerPipeline(name=pickle, n_stages=2)
+2026-01-28 09:28:39,346 DEBUG requests_cache.backends.sqlite Opening connection to /app/http_cache.sqlite:responses
+2026-01-28 09:28:39,361 DEBUG requests_cache.backends.base Initialized SQLiteDict with serializer: None
+2026-01-28 09:28:39,361 DEBUG requests_cache.backends.sqlite Opening connection to /app/http_cache.sqlite:redirects
+2026-01-28 09:28:39,365 DEBUG urllib3.util.retry Converted retries value: 3 -> Retry(total=3, connect=None, read=None, redirect=None, status=None)
+2026-01-28 09:28:39,366 DEBUG http_client GET https://contract.mexc.com/api/v1/contract/detail params=None
+2026-01-28 09:28:39,376 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:39,376 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:39,377 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:39,377 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): contract.mexc.com:443
+2026-01-28 09:28:39,495 DEBUG urllib3.connectionpool https://contract.mexc.com:443 "GET /api/v1/contract/detail HTTP/1.1" 200 107983
+2026-01-28 09:28:39,545 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:39,682 INFO adapters.binance Binance CMS url=https://www.binance.com/bapi/composite/v1/public/cms/article/list/query params={'type': 1, 'pageNo': 1, 'pageSize': 50}
+2026-01-28 09:28:39,683 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:39,683 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:39,684 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:39,684 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): www.binance.com:443
+2026-01-28 09:28:40,107 DEBUG urllib3.connectionpool https://www.binance.com:443 "GET /bapi/composite/v1/public/cms/article/list/query?type=1&pageNo=1&pageSize=50 HTTP/1.1" 200 22744
+2026-01-28 09:28:40,109 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:40,116 INFO adapters.binance Binance CMS response status=200 content_type=application/json;charset=UTF-8 body_preview={"code":"000000","message":null,"messageDetail":null,"data":{"catalogs":[{"catalogId":48,"parentCatalogId":null,"icon":"https://public.bnbstatic.com/image/cms/content/body/202505/d3201bf0be35bb246b65a767221410e0.png","catalogName":"New Cryptocurrency Listing","description":null,"catalogType":1,"tota
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Margin Will Add New Pairs - 2026-01-27 upper=BINANCE MARGIN WILL ADD NEW PAIRS - 2026-01-27 matches=[] result=['01', '2026', '27']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Futures Will Launch USDⓈ-Margined TSLAUSDT Equity Perpetual Contract (2026-01-28) upper=BINANCE FUTURES WILL LAUNCH USDⓈ-MARGINED TSLAUSDT EQUITY PERPETUAL CONTRACT (2026-01-28) matches=[('TSLA', 'USDT')] result=['TSLA']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Notice on New Trading Pairs & Trading Bots Services on Binance Spot - 2026-01-27 upper=NOTICE ON NEW TRADING PAIRS & TRADING BOTS SERVICES ON BINANCE SPOT - 2026-01-27 matches=[] result=['01', '2026', '27', 'SERVICES']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Futures Will Launch USDⓈ-Margined SPACEUSDT and FIGHTUSDT Perpetual Contracts (2026-01-23) upper=BINANCE FUTURES WILL LAUNCH USDⓈ-MARGINED SPACEUSDT AND FIGHTUSDT PERPETUAL CONTRACTS (2026-01-23) matches=[('SPACE', 'USDT'), ('FIGHT', 'USDT')] result=['FIGHT', 'SPACE']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Will Add Sentient (SENT) on Earn, Buy Crypto, Convert, VIP Loan, Margin & Futures upper=BINANCE WILL ADD SENTIENT (SENT) ON EARN, BUY CRYPTO, CONVERT, VIP LOAN, MARGIN & FUTURES matches=[] result=['BUY', 'CRYPTO', 'EARN', 'LOAN', 'SENT', 'SENTIENT', 'VIP']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Futures Will Launch USDⓈ-Margined SKRUSDT Perpetual Contract (2026-01-22) upper=BINANCE FUTURES WILL LAUNCH USDⓈ-MARGINED SKRUSDT PERPETUAL CONTRACT (2026-01-22) matches=[('SKR', 'USDT')] result=['SKR']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Will Add Ripple USD (RLUSD) on Earn, Buy Crypto, Convert, Margin & VIP Loan upper=BINANCE WILL ADD RIPPLE USD (RLUSD) ON EARN, BUY CRYPTO, CONVERT, MARGIN & VIP LOAN matches=[('RL', 'USD')] result=['RL']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Futures Will Launch USDⓈ-Margined ELSAUSDT Perpetual Contract (2026-01-22) upper=BINANCE FUTURES WILL LAUNCH USDⓈ-MARGINED ELSAUSDT PERPETUAL CONTRACT (2026-01-22) matches=[('ELSA', 'USDT')] result=['ELSA']
+2026-01-28 09:28:40,118 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Will List Sentient (SENT) with Seed Tag Applied upper=BINANCE WILL LIST SENTIENT (SENT) WITH SEED TAG APPLIED matches=[] result=['APPLIED', 'SEED', 'SENT', 'SENTIENT', 'TAG']
+2026-01-28 09:28:40,119 INFO screening_utils extract_tickers pattern=([A-Z0-9]{2,15})(?:\\s*[-_/ ]+\\s*|)(USDT|USDC|USD|BTC|ETH|BNB) raw=Binance Futures Will Launch USDⓈ-Margined ACUUSDT and 我踏马来了USDT Perpetual Contracts (2026-01-21) upper=BINANCE FUTURES WILL LAUNCH USDⓈ-MARGINED ACUUSDT AND 我踏马来了USDT PERPETUAL CONTRACTS (2026-01-21) matches=[('ACU', 'USDT')] result=['ACU']
+2026-01-28 09:28:40,138 INFO __main__ adapter=Binance announcements=135
+2026-01-28 09:28:40,139 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:40,140 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:40,140 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:40,140 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): api.bybit.com:443
+2026-01-28 09:28:40,235 DEBUG urllib3.connectionpool https://api.bybit.com:443 "GET /v5/announcements/index?locale=en-US&limit=50&page=1 HTTP/1.1" 403 986
+2026-01-28 09:28:40,236 DEBUG requests_cache.policy.actions Pre-write cache checks: disabled status
+2026-01-28 09:28:40,236 DEBUG requests_cache.session Skipping cache write for URL: https://api.bybit.com/v5/announcements/index?locale=en-US&limit=50&page=1
+2026-01-28 09:28:40,236 INFO adapters.bybit Bybit request url=https://api.bybit.com/v5/announcements/index params={'locale': 'en-US', 'limit': 50, 'page': 1}
+2026-01-28 09:28:40,236 WARNING adapters.bybit Bybit response status=403 blocked_or_error
+2026-01-28 09:28:40,236 INFO adapters.bybit Bybit response status=403 content_type=text/html body_preview=<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<HTML><HEAD><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<TITLE>ERROR: The request could not be satisfied</TITLE>
+</HEAD><BODY>
+<H1>403 ERROR</H1>
+<H2>The request could
+2026-01-28 09:28:40,236 WARNING __main__ Adapter Bybit failed: 403 Client Error: Forbidden for url: https://api.bybit.com/v5/announcements/index?locale=en-US&limit=50&page=1
+Traceback (most recent call last):
+  File "/app/main.py", line 145, in fetch_all_announcements
+    items = adapter(session, days=days)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/adapters/bybit.py", line 52, in fetch_announcements
+    response.raise_for_status()
+  File "/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 403 Client Error: Forbidden for url: https://api.bybit.com/v5/announcements/index?locale=en-US&limit=50&page=1
+2026-01-28 09:28:40,241 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:40,241 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:40,241 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:40,241 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): api.kucoin.com:443
+2026-01-28 09:28:40,658 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=1&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:40,659 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:40,665 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 1, 'pageSize': 50}
+2026-01-28 09:28:40,665 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":1,"pageSize":50,"list":[{"id":237566,"title":"KuCoin Alpha has Listed Token: copper inu (COPPERINU)","type":["latest-announcements"],"description":"KuCoin Alpha has Listed Token: copper inu (COPPERINU)","releaseTime":1769589542000
+2026-01-28 09:28:40,665 INFO adapters.kucoin KuCoin sample title=KuCoin Alpha has Listed Token: copper inu (COPPERINU) type=['latest-announcements'] publishAt=1769589542000
+2026-01-28 09:28:40,666 INFO adapters.kucoin KuCoin sample title=KuCoin Alpha has Listed Token: Pigeon Doctor (PIGEON) type=['latest-announcements'] publishAt=1769587022000
+2026-01-28 09:28:40,666 INFO adapters.kucoin KuCoin sample title=NPC Gets Listed on KuCoin Futures! Invite Users to Trade NPC Futures and Win 34,000 NPC Rewards! Exclusive for Affiliates! type=['latest-announcements'] publishAt=1769584682000
+2026-01-28 09:28:40,669 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:40,669 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:40,669 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:40,980 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=2&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:40,981 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:40,987 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 2, 'pageSize': 50}
+2026-01-28 09:28:40,987 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":2,"pageSize":50,"list":[{"id":235633,"title":"1M Airdrop Phase 2: Trade New Futures & Earn 1,000 USDT a Day. Over 2,000% APY!","type":["latest-announcements","activities","futures-announcements"],"description":"1M Airdrop Phase 2:
+2026-01-28 09:28:40,988 INFO adapters.kucoin KuCoin sample title=1M Airdrop Phase 2: Trade New Futures & Earn 1,000 USDT a Day. Over 2,000% APY! type=['latest-announcements', 'activities', 'futures-announcements'] publishAt=1769157002000
+2026-01-28 09:28:40,988 INFO adapters.kucoin KuCoin sample title=KuCoin Has Temporarily Closed the Deposit Service of Zeta (ZEX) type=['latest-announcements'] publishAt=1769155022000
+2026-01-28 09:28:40,988 INFO adapters.kucoin KuCoin sample title=KuCoin Has Temporarily Closed the Deposit Service of Several Projects type=['latest-announcements'] publishAt=1769153582000
+2026-01-28 09:28:40,992 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:40,992 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:40,992 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:41,313 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=3&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:41,314 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:41,319 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 3, 'pageSize': 50}
+2026-01-28 09:28:41,319 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":3,"pageSize":50,"list":[{"id":233747,"title":"KuCoin Earn Will Delist the FXS Project Coin","type":["latest-announcements"],"description":"KuCoin Earn Will Delist the FXS Project Coin","releaseTime":1768812302000,"language":"en_US
+2026-01-28 09:28:41,319 INFO adapters.kucoin KuCoin sample title=KuCoin Earn Will Delist the FXS Project Coin type=['latest-announcements'] publishAt=1768812302000
+2026-01-28 09:28:41,320 INFO adapters.kucoin KuCoin sample title=KuCoin Trading Bot Will Delist the TANSSIUSDTM, DMCUSDTM type=['latest-announcements'] publishAt=1768802942000
+2026-01-28 09:28:41,320 INFO adapters.kucoin KuCoin sample title=KuCoin Will Adjust the Tick Size for Certain Spot Trading Pairs type=['latest-announcements'] publishAt=1768798081000
+2026-01-28 09:28:41,323 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:41,323 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:41,323 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:41,667 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=4&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:41,668 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:41,673 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 4, 'pageSize': 50}
+2026-01-28 09:28:41,674 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":4,"pageSize":50,"list":[{"id":227849,"title":"NUMI Gets Listed on KuCoin Futures!  Invite Users to Trade NUMI Futures and Win 30,000 NUMI Rewards! ","type":["latest-announcements"],"description":"Exclusive for Affiliates!","releas
+2026-01-28 09:28:41,674 INFO adapters.kucoin KuCoin sample title=NUMI Gets Listed on KuCoin Futures!  Invite Users to Trade NUMI Futures and Win 30,000 NUMI Rewards!  type=['latest-announcements'] publishAt=1768212000000
+2026-01-28 09:28:41,674 INFO adapters.kucoin KuCoin sample title=KuCoin Alpha has Listed Token: Pippin (PIPPIN） type=['latest-announcements'] publishAt=1768211462000
+2026-01-28 09:28:41,674 INFO adapters.kucoin KuCoin sample title=KuCoin Will Delist 17 Spot Trading Pairs type=['latest-announcements'] publishAt=1768211102000
+2026-01-28 09:28:41,678 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:41,678 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:41,678 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:42,021 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=5&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:42,022 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:42,027 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 5, 'pageSize': 50}
+2026-01-28 09:28:42,027 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":5,"pageSize":50,"list":[{"id":229916,"title":"Changes to Max Funding Rates for ZKUSDT Perpetual Contracts (01-06)","type":["latest-announcements","futures-announcements"],"description":"Changes to Max Funding Rates for ZKUSDT Perp
+2026-01-28 09:28:42,027 INFO adapters.kucoin KuCoin sample title=Changes to Max Funding Rates for ZKUSDT Perpetual Contracts (01-06) type=['latest-announcements', 'futures-announcements'] publishAt=1767697562000
+2026-01-28 09:28:42,027 INFO adapters.kucoin KuCoin sample title=Important Notice: Optimization of the Perpetual Futures Funding Rate Calculation Mechanism(01-09) type=['latest-announcements', 'futures-announcements'] publishAt=1767697022000
+2026-01-28 09:28:42,027 INFO adapters.kucoin KuCoin sample title=Rain (RAIN) Listing Campaign, 4.8 Million RAIN to Giveaway! type=['latest-announcements', 'activities'] publishAt=1767693241000
+2026-01-28 09:28:42,031 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:42,031 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:42,031 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:42,318 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=6&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:42,319 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:42,324 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 6, 'pageSize': 50}
+2026-01-28 09:28:42,324 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":6,"pageSize":50,"list":[{"id":227924,"title":"KuCoin Earn Will Be Launching Two New Saving Coins","type":["latest-announcements"],"description":"KuCoin Earn Will Be Launching Two New Saving Coins","releaseTime":1767000781000,"lang
+2026-01-28 09:28:42,325 INFO adapters.kucoin KuCoin sample title=KuCoin Earn Will Be Launching Two New Saving Coins type=['latest-announcements'] publishAt=1767000781000
+2026-01-28 09:28:42,325 INFO adapters.kucoin KuCoin sample title=KuCoin Media Kit type=['latest-announcements'] publishAt=1766971621000
+2026-01-28 09:28:42,325 INFO adapters.kucoin KuCoin sample title=Changes to Funding Rate Intervals for DUSDT Perpetual Contracts (12-29) type=['latest-announcements', 'futures-announcements'] publishAt=1766969822000
+2026-01-28 09:28:42,326 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:42,326 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:42,327 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:42,626 DEBUG urllib3.connectionpool https://api.kucoin.com:443 "GET /api/ua/v1/market/announcement?language=en_US&pageNumber=7&pageSize=50 HTTP/1.1" 200 None
+2026-01-28 09:28:42,627 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:42,632 INFO adapters.kucoin KuCoin request url=https://api.kucoin.com/api/ua/v1/market/announcement params={'language': 'en_US', 'pageNumber': 7, 'pageSize': 50}
+2026-01-28 09:28:42,632 INFO adapters.kucoin KuCoin response status=200 content_type=application/json body_preview={"code":"200000","data":{"totalNumber":255,"totalPage":6,"pageNumber":7,"pageSize":50,"list":[]}}
+2026-01-28 09:28:42,632 INFO adapters.kucoin KuCoin type distribution={'latest-announcements': 115, 'latest-announcements,new-listings': 27, 'futures-announcements,new-listings,latest-announcements': 4, 'futures-announcements,latest-announcements': 13, 'futures-announcements,activities,latest-announcements': 3, 'maintenance-updates,latest-announcements': 2, 'latest-announcements,futures-announcements': 36, 'latest-announcements,new-listings,futures-announcements': 16, 'latest-announcements,activities,futures-announcements': 10, 'activities,latest-announcements': 1, 'latest-announcements,activities': 18, 'latest-announcements,others': 4, 'latest-announcements,delistings,futures-announcements': 4, 'others,latest-announcements': 1, 'latest-announcements,maintenance-updates': 1}
+2026-01-28 09:28:42,632 INFO adapters.kucoin KuCoin total_items=255 in_window=251
+2026-01-28 09:28:42,632 INFO __main__ adapter=KuCoin announcements=251
+2026-01-28 09:28:42,632 DEBUG http_client GET https://xtsupport.zendesk.com/api/v2/help_center/en-us/articles.json params={'page': 1, 'per_page': 50}
+2026-01-28 09:28:42,634 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:42,634 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:42,634 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:42,634 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): xtsupport.zendesk.com:443
+2026-01-28 09:28:43,564 DEBUG urllib3.connectionpool https://xtsupport.zendesk.com:443 "GET /api/v2/help_center/en-us/articles.json?page=1&per_page=50 HTTP/1.1" 200 None
+2026-01-28 09:28:43,602 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:43,670 DEBUG http_client GET https://xtsupport.zendesk.com/api/v2/help_center/en-us/articles.json params={'page': 2, 'per_page': 50}
+2026-01-28 09:28:43,672 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:43,672 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:43,673 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:44,879 DEBUG urllib3.connectionpool https://xtsupport.zendesk.com:443 "GET /api/v2/help_center/en-us/articles.json?page=2&per_page=50 HTTP/1.1" 200 None
+2026-01-28 09:28:44,885 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:44,900 INFO __main__ adapter=XT announcements=20
+2026-01-28 09:28:44,901 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:44,902 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:44,902 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:44,902 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): www.gate.com:443
+2026-01-28 09:28:44,983 DEBUG urllib3.connectionpool https://www.gate.com:443 "GET /announcements/newlisted HTTP/1.1" 403 393
+2026-01-28 09:28:44,985 DEBUG requests_cache.policy.actions Pre-write cache checks: disabled status
+2026-01-28 09:28:44,985 DEBUG requests_cache.session Skipping cache write for URL: https://www.gate.com/announcements/newlisted
+2026-01-28 09:28:44,985 INFO adapters.gate Gate listing url=https://www.gate.com/announcements/newlisted status=403
+2026-01-28 09:28:44,985 WARNING adapters.gate Gate listing response status=403 blocked_or_error
+2026-01-28 09:28:44,985 INFO adapters.gate Gate parsed announcements=0 from https://www.gate.com
+2026-01-28 09:28:44,986 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:44,987 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:44,987 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:44,987 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): www.gate.tv:443
+2026-01-28 09:28:45,194 DEBUG urllib3.connectionpool https://www.gate.tv:443 "GET /announcements/newlisted HTTP/1.1" 301 0
+2026-01-28 09:28:45,195 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:45,196 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:45,196 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:45,196 DEBUG urllib3.connectionpool Resetting dropped connection: www.gate.com
+2026-01-28 09:28:45,253 DEBUG urllib3.connectionpool https://www.gate.com:443 "GET /announcements/newlisted HTTP/1.1" 403 393
+2026-01-28 09:28:45,254 DEBUG requests_cache.policy.actions Pre-write cache checks: disabled status
+2026-01-28 09:28:45,254 DEBUG requests_cache.session Skipping cache write for URL: https://www.gate.com/announcements/newlisted
+2026-01-28 09:28:45,255 DEBUG requests_cache.policy.actions Pre-write cache checks: disabled status
+2026-01-28 09:28:45,255 DEBUG requests_cache.session Skipping cache write for URL: https://www.gate.tv/announcements/newlisted
+2026-01-28 09:28:45,255 INFO adapters.gate Gate listing url=https://www.gate.tv/announcements/newlisted status=403
+2026-01-28 09:28:45,255 WARNING adapters.gate Gate listing response status=403 blocked_or_error
+2026-01-28 09:28:45,255 INFO adapters.gate Gate parsed announcements=0 from https://www.gate.tv
+2026-01-28 09:28:45,255 INFO __main__ adapter=Gate announcements=0
+2026-01-28 09:28:45,255 INFO adapters.kraken Kraken adapter using WP JSON feed for asset listings (spot)
+2026-01-28 09:28:45,255 DEBUG http_client GET https://blog.kraken.com/wp-json/wp/v2/categories params={'slug': 'asset-listings'}
+2026-01-28 09:28:45,257 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:45,257 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:45,257 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:45,257 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): blog.kraken.com:443
+2026-01-28 09:28:46,263 DEBUG urllib3.connectionpool https://blog.kraken.com:443 "GET /wp-json/wp/v2/categories?slug=asset-listings HTTP/1.1" 200 None
+2026-01-28 09:28:46,266 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:46,275 DEBUG http_client GET https://blog.kraken.com/wp-json/wp/v2/posts params={'per_page': 50, 'categories': 1789}
+2026-01-28 09:28:46,278 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:46,278 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:46,278 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:48,234 DEBUG urllib3.connectionpool https://blog.kraken.com:443 "GET /wp-json/wp/v2/posts?per_page=50&categories=1789 HTTP/1.1" 200 None
+2026-01-28 09:28:48,260 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:48,314 INFO adapters.kraken Kraken fetched_count=18 listing_filter_pass_count=18 sample_titles=['HSK is available for trading!', 'SPACE is available for trading!', 'BDX is available for trading!', 'TEL is available for trading!', 'FIGHT is available for trading!', 'SENT is available for trading!', 'GWEI is available for trading!', 'SKR is available for trading!', 'IN is available for trading!', 'ACU is available for trading!']
+2026-01-28 09:28:48,316 INFO __main__ adapter=Kraken announcements=18
+2026-01-28 09:28:48,318 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:48,318 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:48,319 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:48,319 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): api.bitget.com:443
+2026-01-28 09:28:48,636 DEBUG urllib3.connectionpool https://api.bitget.com:443 "GET /api/v2/public/annoucements?annType=coin_listings&language=en_US HTTP/1.1" 200 None
+2026-01-28 09:28:48,638 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:48,644 INFO adapters.bitget Bitget request url=https://api.bitget.com/api/v2/public/annoucements params={'annType': 'coin_listings', 'language': 'en_US'}
+2026-01-28 09:28:48,645 INFO adapters.bitget Bitget response status=200 content_type=application/json body_preview={"code":"00000","msg":"success","requestTime":1769592528606,"data":[{"annId":"12560603849372","annDesc":"coin_listings","annTitle":"[Initial listing] Bitget to list Moonbirds (BIRB) in the Innovation zone","annType":"coin_listings","annSubType":"spot","language":"en_US","annUrl":"https://www.bitget.
+2026-01-28 09:28:48,645 INFO adapters.bitget Bitget sample title=[Initial listing] Bitget to list Moonbirds (BIRB) in the Innovation zone annType=coin_listings annSubType=spot tickers=['BIRB', 'INITIAL', 'MOONBIRDS']
+2026-01-28 09:28:48,645 INFO adapters.bitget Bitget sample title=[Initial Listing] USAT (USAT) will be listed in Bitget Innovation Zone annType=coin_listings annSubType=spot tickers=['INITIAL', 'USAT']
+2026-01-28 09:28:48,645 INFO adapters.bitget Bitget sample title=FIGHTUSDT now launched for futures trading and trading bots annType=coin_listings annSubType=futures tickers=['FIGHT']
+2026-01-28 09:28:48,645 INFO adapters.bitget Bitget sample title=SPACEUSDT now launched for futures trading and trading bots annType=coin_listings annSubType=futures tickers=['SPACE']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=New spot margin trading pair — FOGO/USDT! annType=coin_listings annSubType=margin tickers=['FOGO']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=SENTUSDT now launched for futures trading and trading bots annType=coin_listings annSubType=futures tickers=['SENT']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=ELSAUSDT now launched for futures trading and trading bots annType=coin_listings annSubType=futures tickers=['ELSA']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=ACUUSDT now launched for futures trading and trading bots annType=coin_listings annSubType=futures tickers=['ACU']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=[Initial listing] Bitget to list Sentient (SENT) in the Innovation and AI zone annType=coin_listings annSubType=spot tickers=['AI', 'INITIAL', 'SENT', 'SENTIENT']
+2026-01-28 09:28:48,646 INFO adapters.bitget Bitget sample title=[Initial listing] Bitget to list Spacecoin (SPACE) in the Innovation and DePIN zone annType=coin_listings annSubType=spot tickers=['DEPIN', 'INITIAL', 'SPACE', 'SPACECOIN']
+2026-01-28 09:28:48,646 INFO __main__ adapter=Bitget announcements=10
+2026-01-28 09:28:48,647 INFO __main__ total announcements fetched=434
+2026-01-28 09:28:48,653 INFO __main__ after listing filter=166 excluded=268
+2026-01-28 09:28:48,653 INFO __main__ futures keyword hits={'futures': 87, 'perpetual': 51, 'innovation': 4, 'perp': 1, 'contract': 1, 'swap': 1}
+2026-01-28 09:28:48,654 INFO __main__ spot keyword hits={'listed': 43, 'spot trading': 24, 'adds': 10, 'available for trading': 18, 'now available': 2, 'listing': 18, 'introducing': 7, 'will list': 5}
+2026-01-28 09:28:48,654 INFO __main__ listing exclusion reasons={'add': 2, 'excluded:week': 10, 'excluded:tick size': 9, 'no_match': 114, 'excluded:funding rate': 46, 'excluded:fee': 12, 'futures': 11, 'excluded:delist': 25, 'excluded:maintenance': 5, 'perpetual;contract': 3, 'excluded:maintenance,system upgrade': 1, 'launch': 6, 'excluded:index': 1, 'excluded:funding rate,adjusting': 2, 'excluded:campaign': 15, 'listed;list': 1, 'excluded:parameter': 1, 'excluded:replacement': 1, 'swap': 1, 'excluded:funding rate,settlement': 1, 'perpetual;futures': 1}
+2026-01-28 09:28:48,654 INFO __main__ Kraken listing_filter_pass_count=18 exclusion_reasons={}
+2026-01-28 09:28:48,654 INFO __main__ after sort=166
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=0 title=KuCoin Alpha has Listed Token: copper inu (COPPERINU) tickers=['ALPHA', 'COPPER', 'COPPERINU', 'HAS', 'INU']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=1 title=KuCoin Alpha has Listed Token: Pigeon Doctor (PIGEON) tickers=['ALPHA', 'DOCTOR', 'HAS', 'PIGEON']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=2 title=NPC Gets Listed on KuCoin Futures! Invite Users to Trade NPC Futures and Win 34,000 NPC Rewards! Exclusive for Affiliates! tickers=['000', '34', 'AFFILIATES', 'EXCLUSIVE', 'GETS', 'INVITE', 'NPC', 'REWARDS', 'USERS', 'WIN']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=3 title=KuCoin Futures New Listing: BIRBUSDT Perpetual Contract with Up to 20x Leverage tickers=['BIRB']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=4 title=[Initial listing] Bitget to list Moonbirds (BIRB) in the Innovation zone tickers=['BIRB', 'INITIAL', 'MOONBIRDS']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=5 title=KuCoin Futures New Listing: NPCUSDT Perpetual Contract with Up to 20x Leverage tickers=['NPC']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=6 title=[Initial Listing] USAT (USAT) will be listed in Bitget Innovation Zone tickers=['INITIAL', 'USAT']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=7 title= KuCoin Alpha has Listed Token: EPHYRA (EPH) tickers=['ALPHA', 'EPH', 'EPHYRA', 'HAS']
+2026-01-28 09:28:48,654 INFO __main__ ticker extraction sample idx=8 title=Moonbirds (BIRB) Gets Listed on KuCoin! World Premiere! tickers=['BIRB', 'GETS', 'MOONBIRDS', 'PREMIERE', 'WORLD']
+2026-01-28 09:28:48,655 INFO __main__ ticker extraction sample idx=9 title=XT.COM Will Launch USDT-M PYBOBOUSDT Perpetual Futures (2026-01-27) tickers=['PYBOBO']
+2026-01-28 09:28:48,655 INFO __main__ No MEXC symbol mapping for ALPHA
+2026-01-28 09:28:48,655 INFO __main__ No MEXC symbol mapping for COPPER
+2026-01-28 09:28:48,655 INFO __main__ No MEXC symbol mapping for COPPERINU
+2026-01-28 09:28:48,656 INFO __main__ No MEXC symbol mapping for HAS
+2026-01-28 09:28:48,656 INFO __main__ No MEXC symbol mapping for INU
+2026-01-28 09:28:48,656 INFO __main__ No MEXC symbol mapping for ALPHA
+2026-01-28 09:28:48,656 INFO __main__ No MEXC symbol mapping for DOCTOR
+2026-01-28 09:28:48,657 INFO __main__ No MEXC symbol mapping for HAS
+2026-01-28 09:28:48,657 INFO __main__ No MEXC symbol mapping for PIGEON
+2026-01-28 09:28:48,657 INFO __main__ No MEXC symbol mapping for 000
+2026-01-28 09:28:48,658 INFO __main__ No MEXC symbol mapping for 34
+2026-01-28 09:28:48,658 INFO __main__ No MEXC symbol mapping for AFFILIATES
+2026-01-28 09:28:48,658 INFO __main__ No MEXC symbol mapping for EXCLUSIVE
+2026-01-28 09:28:48,658 INFO __main__ No MEXC symbol mapping for GETS
+2026-01-28 09:28:48,659 INFO __main__ No MEXC symbol mapping for INVITE
+2026-01-28 09:28:48,659 INFO mexc MEXC kline request url=https://contract.mexc.com/api/v1/contract/kline/NPC_USDT params={'interval': 'Min1', 'start': 1769584080, 'end': 1769584800} start=1769584080 end=1769584800 use_ms=False
+2026-01-28 09:28:48,661 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:48,661 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:48,662 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:48,823 DEBUG urllib3.connectionpool https://contract.mexc.com:443 "GET /api/v1/contract/kline/NPC_USDT?interval=Min1&start=1769584080&end=1769584800 HTTP/1.1" 200 369
+2026-01-28 09:28:48,824 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:48,830 INFO mexc MEXC kline response status=200 body_preview={"success":true,"code":0,"data":{"time":[1769584080,1769584140,1769584200,1769584260,1769584320,1769584380,1769584440,1769584500,1769584560,1769584620,1769584680,1769584740,1769584800],"open":[0.00823,0.00825,0.00825,0.00823,0.00824,0.00821,0.00817,0.0082,0.00825,0.00815,0.00825,0.00822,0.00826],"cl
+2026-01-28 09:28:48,830 INFO mexc MEXC kline request url=https://contract.mexc.com/api/v1/contract/kline/NPC_USDT params={'interval': 'Min1', 'start': 1769584080, 'end': 1769591880} start=1769584080 end=1769591880 use_ms=False
+2026-01-28 09:28:48,833 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:48,834 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:48,834 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:48,989 DEBUG urllib3.connectionpool https://contract.mexc.com:443 "GET /api/v1/contract/kline/NPC_USDT?interval=Min1&start=1769584080&end=1769591880 HTTP/1.1" 200 1989
+2026-01-28 09:28:48,990 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:48,998 INFO mexc MEXC kline response status=200 body_preview={"success":true,"code":0,"data":{"time":[1769584080,1769584140,1769584200,1769584260,1769584320,1769584380,1769584440,1769584500,1769584560,1769584620,1769584680,1769584740,1769584800,1769584860,1769584920,1769584980,1769585040,1769585100,1769585160,1769585220,1769585280,1769585340,1769585400,176958
+2026-01-28 09:28:49,000 DEBUG http_client GET https://api.coingecko.com/api/v3/search params={'query': 'NPC'}
+2026-01-28 09:28:49,002 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:49,003 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:49,003 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:49,004 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): api.coingecko.com:443
+2026-01-28 09:28:49,235 DEBUG urllib3.connectionpool https://api.coingecko.com:443 "GET /api/v3/search?query=NPC HTTP/1.1" 200 None
+2026-01-28 09:28:49,236 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:49,243 DEBUG http_client GET https://api.coingecko.com/api/v3/coins/non-playable-coin params={'localization': 'false', 'tickers': 'false', 'market_data': 'true', 'community_data': 'false', 'developer_data': 'false', 'sparkline': 'false'}
+2026-01-28 09:28:49,245 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:49,245 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:49,246 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:49,367 DEBUG urllib3.connectionpool https://api.coingecko.com:443 "GET /api/v3/coins/non-playable-coin?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false HTTP/1.1" 200 None
+2026-01-28 09:28:49,369 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:49,381 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:49,381 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:49,382 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:49,383 DEBUG urllib3.connectionpool Starting new HTTPS connection (1): api-futures.kucoin.com:443
+2026-01-28 09:28:50,094 DEBUG urllib3.connectionpool https://api-futures.kucoin.com:443 "GET /api/v1/kline/query?symbol=NPCUSDTM&granularity=1&from=1769498282000 HTTP/1.1" 200 None
+2026-01-28 09:28:50,095 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:50,105 INFO launch_util launch_util: Resolved launch time for NPC on KuCoin: 2026-01-28T06:30:00+00:00
+2026-01-28 09:28:50,105 INFO mexc MEXC kline request url=https://contract.mexc.com/api/v1/contract/kline/NPC_USDT params={'interval': 'Min1', 'start': 1769581200, 'end': 1769589000} start=1769581200 end=1769589000 use_ms=False
+2026-01-28 09:28:50,108 DEBUG requests_cache.policy.actions Cache directives from request headers: CacheDirectives()
+2026-01-28 09:28:50,108 DEBUG requests_cache.policy.actions Pre-read cache checks: Passed
+2026-01-28 09:28:50,109 DEBUG requests_cache.policy.actions Post-read cache actions: CacheActions(expire_after=10800, send_request=True)
+2026-01-28 09:28:50,274 DEBUG urllib3.connectionpool https://contract.mexc.com:443 "GET /api/v1/contract/kline/NPC_USDT?interval=Min1&start=1769581200&end=1769589000 HTTP/1.1" 200 1985
+2026-01-28 09:28:50,276 DEBUG requests_cache.policy.actions Pre-write cache checks: Passed
+2026-01-28 09:28:50,284 INFO mexc MEXC kline response status=200 body_preview={"success":true,"code":0,"data":{"time":[1769581200,1769581260,1769581320,1769581380,1769581440,1769581500,1769581560,1769581620,1769581680,1769581740,1769581800,1769581860,1769581920,1769581980,1769582040,1769582100,1769582160,1769582220,1769582280,1769582340,1769582400,1769582460,1769582520,176958
+2026-01-28 09:28:50,289 INFO __main__ candidates checked=16 mapped=1 candle_ok=1 qualified=1
