@@ -118,6 +118,18 @@ IGNORE_WORDS = {
     "WALLET",
     "DEPOSIT",
     "WITHDRAWAL",
+    "ALL",
+    "MET",
+    "ID",
+    "AI",
+    "PEOPLE",
+    "BANK",
+    "XAU",
+    "XAG",
+    "EUR",
+    "AUD",
+    "GBP",
+    "ORDER",
 }
 
 SEEN_LOCK = threading.Lock()
