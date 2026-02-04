@@ -24,6 +24,8 @@ from screening_utils import get_session
 from marketcap import resolve_market_cap
 from mexc import MexcFuturesClient
 from micro_highs import compute_micro_highs
+from launch_highlow import compute_launch_highlow, LaunchHighLowResult
+from launch_util import resolve_launch_time
 
 
 LOGGER = logging.getLogger(__name__)
@@ -408,7 +410,7 @@ def main() -> None:
                 qualified += 1
 
                 window_start = at_time - timedelta(minutes=10)
-                window_end = at_time + timedelta(minutes=60)
+                window_end = at_time + timedelta(minutes=120)
                 candles = mexc.fetch_klines(symbol, window_start, window_end)
                 if not candles:
                     continue
@@ -430,6 +432,29 @@ def main() -> None:
                     lookahead_bars=LOOKAHEAD_BARS,
                     min_pullback_pct=MIN_PULLBACK_PCT,
                 )
+
+                # Search from 24h before publication to catch "already listed" cases or slightly earlier trading starts
+                search_start = None
+                if announcement.published_at_utc:
+                    search_start = announcement.published_at_utc - timedelta(days=1)
+                launch_time = resolve_launch_time(session, announcement.source_exchange, ticker, search_start_time=search_start)
+
+                effective_launch_time = launch_time
+                if not effective_launch_time:
+                    effective_launch_time = announcement.launch_at_utc
+
+                launch_res = LaunchHighLowResult(None, None, None, None, None, None, None, None)
+                ma5_launch = None
+                if effective_launch_time:
+                    # Fetch fresh candles around launch time to ensure coverage and data freshness
+                    # Window: -10m (for MA5) to +120m (for high/low analysis)
+                    l_start = effective_launch_time - timedelta(minutes=10)
+                    l_end = effective_launch_time + timedelta(minutes=120)
+                    launch_candles = mexc.fetch_klines(symbol, l_start, l_end)
+                    if launch_candles:
+                        ma5_launch = _compute_ma5_at_minus_1m(launch_candles, effective_launch_time)
+                        launch_res = compute_launch_highlow(launch_candles, effective_launch_time)
+
                 notes = []
                 if mc_note:
                     notes.append(mc_note)
@@ -442,9 +467,10 @@ def main() -> None:
                     "listing_type": announcement.listing_type_guess,
                     "market_type": announcement.market_type,
                     "announcement_datetime_utc": _format_dt(announcement.published_at_utc),
-                    "launch_datetime_utc": _format_dt(announcement.launch_at_utc),
+                    "launch_datetime_utc": _format_dt(launch_time) if launch_time else _format_dt(announcement.launch_at_utc),
                     "market_cap_usd_at_minus_1m": f"{market_cap:.2f}" if market_cap else "",
                     "ma5_close_price_at_minus_1m": f"{ma5:.6f}" if ma5 else "",
+                    "ma5_close_price_at_minus_1m_Launch": f"{ma5_launch:.6f}" if ma5_launch else "",
                     "max_price_1_close": f"{micro_result.max_price_1_close:.6f}"
                     if micro_result.max_price_1_close
                     else "",
@@ -461,6 +487,14 @@ def main() -> None:
                     if micro_result.lowest_after_2_close
                     else "",
                     "lowest_after_2_time_utc": _format_dt(micro_result.lowest_after_2_time),
+                    "launch_high_close": f"{launch_res.highest_close:.6f}" if launch_res.highest_close else "",
+                    "launch_high_time": _format_dt(launch_res.highest_time),
+                    "launch_pullback1_close": f"{launch_res.pullback_1_close:.6f}" if launch_res.pullback_1_close else "",
+                    "launch_pullback1_time": _format_dt(launch_res.pullback_1_time),
+                    "launch_low_close": f"{launch_res.lowest_close:.6f}" if launch_res.lowest_close else "",
+                    "launch_low_time": _format_dt(launch_res.lowest_time),
+                    "launch_pullback2_close": f"{launch_res.pullback_2_close:.6f}" if launch_res.pullback_2_close else "",
+                    "launch_pullback2_time": _format_dt(launch_res.pullback_2_time),
                     "source_url": announcement.url,
                     "notes": "; ".join(notes),
                 }
@@ -528,6 +562,7 @@ def main() -> None:
         "launch_datetime_utc",
         "market_cap_usd_at_minus_1m",
         "ma5_close_price_at_minus_1m",
+        "ma5_close_price_at_minus_1m_Launch",
         "max_price_1_close",
         "max_price_1_time_utc",
         "lowest_after_1_close",
@@ -536,6 +571,14 @@ def main() -> None:
         "max_price_2_time_utc",
         "lowest_after_2_close",
         "lowest_after_2_time_utc",
+        "launch_high_close",
+        "launch_high_time",
+        "launch_pullback1_close",
+        "launch_pullback1_time",
+        "launch_low_close",
+        "launch_low_time",
+        "launch_pullback2_close",
+        "launch_pullback2_time",
         "source_url",
         "notes",
     ]
