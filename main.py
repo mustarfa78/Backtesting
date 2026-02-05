@@ -543,7 +543,7 @@ def main() -> None:
             else:
                 reason = "0 rows after processing"
             summary_lines.append(f"adapter={name} zero rows reason={reason}")
-        if rows or days_window >= max_days:
+        if len(rows) >= args.target or days_window >= max_days:
             if len(rows) < args.target:
                 summary_lines.append(
                     f"Target {args.target} not reached (rows={len(rows)}) within {days_window} days"

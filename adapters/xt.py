@@ -12,9 +12,13 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     page = 1
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
-    while page <= 2:
+    while True:
         data = get_json(session, base_url, params={"page": page, "per_page": 50})
         items = data.get("articles", [])
+        if not items:
+            break
+
+        batch_min_ts = None
         for item in items:
             published_at = item.get("created_at")
             if not published_at:
@@ -23,7 +27,12 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
             if not parsed:
                 continue
             published = parsed
-            if published.timestamp() < cutoff:
+
+            ts = published.timestamp()
+            if batch_min_ts is None or ts < batch_min_ts:
+                batch_min_ts = ts
+
+            if ts < cutoff:
                 continue
             title = item.get("title", "")
             if "futures" not in title.lower() and "contract" not in title.lower():
@@ -44,6 +53,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     body="",
                 )
             )
+
+        if batch_min_ts is not None and batch_min_ts < cutoff:
+            break
+
         if not data.get("next_page"):
             break
         page += 1
