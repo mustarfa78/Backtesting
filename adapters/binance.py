@@ -18,9 +18,9 @@ _BINANCE_HEADERS = {
 }
 
 
-def _fetch_cms_articles(session) -> List[Announcement]:
+def _fetch_cms_articles(session, page_no: int = 1) -> List[Announcement]:
     cms_url = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
-    params = {"type": 1, "pageNo": 1, "pageSize": 50}
+    params = {"type": 1, "pageNo": page_no, "pageSize": 50}
     announcements: List[Announcement] = []
     LOGGER.info("Binance CMS url=%s params=%s", cms_url, params)
     response = session.get(cms_url, params=params, headers=_BINANCE_HEADERS, timeout=20)
@@ -64,8 +64,20 @@ def _fetch_cms_articles(session) -> List[Announcement]:
 
 
 def fetch_announcements(session, days: int = 30) -> List[Announcement]:
-    announcements = _fetch_cms_articles(session)
+    announcements: List[Announcement] = []
+    cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+    page = 1
+    while True:
+        items = _fetch_cms_articles(session, page_no=page)
+        if not items:
+            break
+        announcements.extend(items)
+        dates = [a.published_at_utc.timestamp() for a in items]
+        if dates and min(dates) < cutoff:
+            break
+        page += 1
+
     if not announcements:
         LOGGER.warning("Binance adapter produced 0 items after fallback attempts")
-    cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+
     return [a for a in announcements if a.published_at_utc.timestamp() >= cutoff]

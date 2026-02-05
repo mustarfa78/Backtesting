@@ -51,51 +51,71 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
     announcements: List[Announcement] = []
     cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
     category_id = _fetch_asset_listing_category_id(session)
-    params = {"per_page": 50}
-    if category_id:
-        params["categories"] = category_id
-    try:
-        posts = get_json(session, feed_url, params=params)
-    except Exception as exc:  # noqa: BLE001
-        LOGGER.warning("Kraken WP JSON fetch failed: %s", exc)
-        return announcements
+
+    page = 1
     titles_sample = []
     listing_pass = 0
-    for post in posts or []:
-        title = (post.get("title") or {}).get("rendered", "") or ""
-        title = unescape(title).strip()
-        link = post.get("link", "")
-        content = (post.get("content") or {}).get("rendered", "") or ""
-        date_gmt = post.get("date_gmt")
-        if not title or not link or not date_gmt:
-            continue
-        published = datetime.fromisoformat(date_gmt.replace("Z", "+00:00")).astimezone(
-            timezone.utc
-        )
-        if published.timestamp() < cutoff:
-            continue
-        content_text = re.sub(r"<.*?>", " ", content)
-        tickers = extract_tickers(f"{title} {content_text}")
-        if not tickers:
-            tickers = _extract_kraken_tickers(title)
-        market_type = infer_market_type(title, default="spot")
-        if len(titles_sample) < 10:
-            titles_sample.append(title)
-        if market_type == "spot":
-            listing_pass += 1
-        announcements.append(
-            Announcement(
-                source_exchange="Kraken",
-                title=title.strip(),
-                published_at_utc=published,
-                launch_at_utc=None,
-                url=link,
-                listing_type_guess=guess_listing_type(title),
-                market_type=market_type,
-                tickers=tickers,
-                body="",
+
+    while True:
+        params = {"per_page": 50, "page": page}
+        if category_id:
+            params["categories"] = category_id
+        try:
+            posts = get_json(session, feed_url, params=params)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Kraken WP JSON fetch failed: %s", exc)
+            break
+
+        if not posts or not isinstance(posts, list):
+            break
+
+        batch_min_ts = None
+        for post in posts:
+            title = (post.get("title") or {}).get("rendered", "") or ""
+            title = unescape(title).strip()
+            link = post.get("link", "")
+            content = (post.get("content") or {}).get("rendered", "") or ""
+            date_gmt = post.get("date_gmt")
+            if not title or not link or not date_gmt:
+                continue
+            published = datetime.fromisoformat(date_gmt.replace("Z", "+00:00")).astimezone(
+                timezone.utc
             )
-        )
+
+            ts = published.timestamp()
+            if batch_min_ts is None or ts < batch_min_ts:
+                batch_min_ts = ts
+
+            if ts < cutoff:
+                continue
+
+            content_text = re.sub(r"<.*?>", " ", content)
+            tickers = extract_tickers(f"{title} {content_text}")
+            if not tickers:
+                tickers = _extract_kraken_tickers(title)
+            market_type = infer_market_type(title, default="spot")
+            if len(titles_sample) < 10:
+                titles_sample.append(title)
+            if market_type == "spot":
+                listing_pass += 1
+            announcements.append(
+                Announcement(
+                    source_exchange="Kraken",
+                    title=title.strip(),
+                    published_at_utc=published,
+                    launch_at_utc=None,
+                    url=link,
+                    listing_type_guess=guess_listing_type(title),
+                    market_type=market_type,
+                    tickers=tickers,
+                    body="",
+                )
+            )
+
+        if batch_min_ts is not None and batch_min_ts < cutoff:
+            break
+        page += 1
+
     LOGGER.info(
         "Kraken fetched_count=%s listing_filter_pass_count=%s sample_titles=%s",
         len(announcements),
