@@ -60,4 +60,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if not data.get("next_page"):
             break
         page += 1
+        if page > 50:
+            # XT has a lot of pages, but if we exceed 50 we are likely going too far back or stuck
+            break
     return announcements

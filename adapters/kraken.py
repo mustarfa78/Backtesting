@@ -115,6 +115,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if batch_min_ts is not None and batch_min_ts < cutoff:
             break
         page += 1
+        if page > 50:
+            LOGGER.warning("Kraken adapter reached page limit 50")
+            break
 
     LOGGER.info(
         "Kraken fetched_count=%s listing_filter_pass_count=%s sample_titles=%s",

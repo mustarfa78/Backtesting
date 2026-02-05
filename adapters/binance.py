@@ -76,6 +76,9 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         if dates and min(dates) < cutoff:
             break
         page += 1
+        if page > 50:
+            LOGGER.warning("Binance adapter reached page limit 50")
+            break
 
     if not announcements:
         LOGGER.warning("Binance adapter produced 0 items after fallback attempts")

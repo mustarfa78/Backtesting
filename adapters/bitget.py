@@ -60,7 +60,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
 
             title = item.get("title", "") or item.get("annTitle", "")
             body = item.get("content", "") or item.get("summary", "") or item.get("annDesc", "")
-            url = item.get("url", "") or item.get("annUrl", "")
+            ann_url = item.get("url", "") or item.get("annUrl", "")
             tickers = extract_tickers(f"{title} {body}")
             market_type = infer_market_type(f"{title} {body}", default="futures")
             if idx < 3 and not cursor:
@@ -77,7 +77,7 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
                     title=title,
                     published_at_utc=published,
                     launch_at_utc=None,
-                    url=url,
+                    url=ann_url,
                     listing_type_guess=guess_listing_type(title),
                     market_type=market_type,
                     tickers=tickers,
@@ -91,6 +91,10 @@ def fetch_announcements(session, days: int = 30) -> List[Announcement]:
         last_item = items[-1]
         cursor = last_item.get("annId")
         if not cursor:
+            break
+
+        if len(announcements) > 500: # Safety break if too many items
+            LOGGER.warning("Bitget adapter reached item limit 500")
             break
 
     return announcements
